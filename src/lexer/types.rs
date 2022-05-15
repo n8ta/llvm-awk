@@ -1,20 +1,31 @@
 #[derive(Debug, Clone, PartialOrd, PartialEq)]
-pub enum Token {
+pub enum BinOp {
     Minus,
     Plus,
     Slash,
     Star,
-    Bang,
-    BangEq,
-    EqEq,
     Greater,
     GreaterEq,
     Less,
     LessEq,
-    String(String),
-    Number(f64),
+    BangEq,
+    EqEq,
+}
+
+#[derive(Debug, Clone, PartialOrd, PartialEq)]
+pub enum LogicalOp {
     And,
     Or,
+}
+
+#[derive(Debug, Clone, PartialOrd, PartialEq)]
+pub enum Token {
+    Column(usize),
+    BinOp(BinOp),
+    LogicalOp(LogicalOp),
+    Bang,
+    String(String),
+    Number(f64),
     False,
     True,
     EOF,
@@ -40,30 +51,40 @@ pub enum TokenType {
     False,
     True,
     EOF,
+    Column,
 }
 
 impl Token {
     pub fn ttype(&self) -> TokenType {
         // Match statement mapping every single ttype to its id
         match self {
-            Token::Minus => TokenType::Minus,
-            Token::Plus => TokenType::Plus,
-            Token::Slash => TokenType::Slash,
-            Token::Star => TokenType::Star,
+            Token::BinOp(bin_op) => {
+                match bin_op {
+                    BinOp::Minus => TokenType::Minus,
+                    BinOp::Plus => TokenType::Plus,
+                    BinOp::Slash => TokenType::Slash,
+                    BinOp::Star => TokenType::Star,
+                    BinOp::Greater => TokenType::Greater,
+                    BinOp::GreaterEq => TokenType::GreaterEq,
+                    BinOp::Less => TokenType::Less,
+                    BinOp::LessEq => TokenType::LessEq,
+                    BinOp::BangEq => TokenType::BangEq,
+                    BinOp::EqEq => TokenType::EqEq,
+                }
+            }
+            Token::LogicalOp(logical_op) => {
+                match logical_op {
+                    LogicalOp::And => TokenType::And,
+                    LogicalOp::Or => TokenType::Or,
+                }
+            }
             Token::Bang => TokenType::Bang,
-            Token::EqEq => TokenType::EqEq,
-            Token::Greater => TokenType::Greater,
-            Token::GreaterEq => TokenType::GreaterEq,
-            Token::Less => TokenType::Less,
-            Token::LessEq => TokenType::LessEq,
             Token::String(_) => TokenType::String,
             Token::Number(_) => TokenType::Number,
-            Token::And => TokenType::And,
-            Token::Or => TokenType::Or,
             Token::False => TokenType::False,
             Token::True => TokenType::True,
             Token::EOF => TokenType::EOF,
-            Token::BangEq => TokenType::BangEq,
+            Token::Column(_) => TokenType::Column,
         }
     }
 }
@@ -89,6 +110,7 @@ impl TokenType {
             TokenType::True => "True",
             TokenType::EOF => "EOF",
             TokenType::BangEq => "BangEq",
+            TokenType::Column => "Column",
         }
     }
 }

@@ -1,11 +1,12 @@
 mod types;
 
-pub use types::{Token, TokenType};
+use std::convert::Infallible;
+pub use types::{Token, TokenType, BinOp, LogicalOp};
 
-pub fn lex(str: &str) -> Vec<Token> {
+pub fn lex(str: &str) -> LexerResult {
     let mut lexer = Lexer::new(str);
-    lexer.scan_tokens();
-    lexer.tokens
+    lexer.scan_tokens()?;
+    Ok(lexer.tokens)
 }
 
 
@@ -65,7 +66,7 @@ impl<'a> Lexer<'a> {
         self.add_token(Token::String(str));
         return Ok(());
     }
-    fn number(&mut self) -> Result<(), String> {
+    fn number_f64(&mut self) -> Result<f64, String> {
         while self.peek().is_digit(10) { self.advance(); }
         if self.peek() == '.' && self.peek_next().is_digit(10) {
             self.advance();
@@ -76,11 +77,25 @@ impl<'a> Lexer<'a> {
         let float = match num.parse::<f64>() {
             Ok(float) => float,
             Err(_) => {
-                return Err(String::from("Unable to parse f64 {}"));
+                return Err(format!("Unable to parse f64 {}", num));
             }
         };
-        self.add_token(Token::Number(float));
-        Ok(())
+        Ok(float)
+    }
+    fn number_usize(&mut self, skip: usize) -> Result<usize, String> {
+        while self.peek().is_digit(10) { self.advance(); }
+        let num = self.src.chars().skip(self.start + skip).take(self.current - (self.start+skip)).collect::<String>();
+        println!("{}", num);
+        let usize = match num.parse::<usize>() {
+            Ok(float) => float,
+            Err(_) => {
+                return Err(format!("Unable to parse usize{}", num));
+            }
+        };
+        if self.peek() == '.' {
+            return Err(String::from("Cannot have a decimal after a non-float number"));
+        }
+        Ok(usize)
     }
     fn identifier(&mut self) -> Result<(), String> {
         while self.peek().is_alphanumeric() { self.advance(); }
@@ -116,56 +131,60 @@ impl<'a> Lexer<'a> {
     }
     fn scan_token(&mut self) -> Result<(), String> {
         let c = self.advance();
+        println!("{}", c);
         match c {
+            '$' => {
+                let num = self.number_usize(1)?;
+                self.add_token(Token::Column(num));
+            }
             // '(' => self.add_token(Token::LeftParen),
             // ')' => self.add_token(Token::RightParen),
             // '{' => self.add_token(Token::LeftBrace),
             // '}' => self.add_token(Token::RightBrace),
             // ',' => self.add_token(Token::Comma),
-            // '.' => self.add_token(Token::Dot),
-            '-' => self.add_token(Token::Minus),
-            '+' => self.add_token(Token::Plus),
+            '-' => self.add_token(Token::BinOp(BinOp::Minus)),
+            '+' => self.add_token(Token::BinOp(BinOp::Plus)),
             // ';' => self.add_token(Token::Semicolon),
-            '*' => self.add_token(Token::Star),
+            '*' => self.add_token(Token::BinOp(BinOp::Star)),
             '!' => {
                 let tt = match self.matches('=') {
-                    true => Token::BangEq,
+                    true => Token::BinOp(BinOp::BangEq),
                     false => Token::Bang,
                 };
                 self.add_token(tt);
             }
             '|' => {
                 let tt = match self.matches('|') {
-                    true => Token::Or,
+                    true => Token::LogicalOp(LogicalOp::Or),
                     false => return Err("| must be followed by ||".to_string()),
                 };
                 self.add_token(tt);
             }
             '&' => {
                 let tt = match self.matches('&') {
-                    true => Token::And,
+                    true => Token::LogicalOp(LogicalOp::And),
                     false => return Err("| must be followed by &".to_string()),
                 };
                 self.add_token(tt);
             }
             '=' => {
                 let tt = match self.matches('=') {
-                    true => Token::EqEq,
+                    true => Token::BinOp(BinOp::EqEq),
                     false => todo!("assignment") //Token::Eq
                 };
                 self.add_token(tt)
             }
             '<' => {
                 let tt = match self.matches('=') {
-                    true => Token::LessEq,
-                    false => Token::Less
+                    true => Token::BinOp(BinOp::LessEq),
+                    false => Token::BinOp(BinOp::Less)
                 };
                 self.add_token(tt)
             }
             '>' => {
                 let tt = match self.matches('=') {
-                    true => Token::GreaterEq,
-                    false => Token::Greater
+                    true => Token::BinOp(BinOp::GreaterEq),
+                    false => Token::BinOp(BinOp::Greater)
                 };
                 self.add_token(tt)
             }
@@ -175,7 +194,7 @@ impl<'a> Lexer<'a> {
                         self.advance();
                     }
                 } else {
-                    self.add_token(Token::Slash);
+                    self.add_token(Token::BinOp(BinOp::Slash));
                 }
             }
             '"' => self.string()?,
@@ -185,7 +204,8 @@ impl<'a> Lexer<'a> {
             '\n' => self.line += 1,
             _ => {
                 if c.is_digit(10) {
-                    self.number()?;
+                    let number = self.number_f64()?;
+                    self.add_token(Token::Number(number));
                 } else if c.is_alphabetic() {
                     self.identifier()?;
                 } else {
@@ -221,27 +241,43 @@ impl<'a> Lexer<'a> {
         Ok(self.tokens.clone())
     }
 }
+
+#[test]
+fn test_column_simple() {
+    let str = "$1";
+    let tokens = lex(str).unwrap();
+    assert_eq!(tokens, vec![Token::Column(1), Token::EOF]);
+}
+
+
+#[test]
+fn test_columns() {
+    let str = "$1 + $2000 $0";
+    let tokens = lex(str).unwrap();
+    assert_eq!(tokens, vec![Token::Column(1), Token::BinOp(BinOp::Plus), Token::Column(2000), Token::Column(0), Token::EOF]);
+}
+
 #[test]
 fn test_lex_binops_and_true_false() {
     let str = "4*2+1-2+false/true";
-    let tokens = lex(str);
-    assert_eq!(tokens, vec![Token::Number(4.0), Token::Star, Token::Number(2.0), Token::Plus, Token::Number(1.0), Token::Minus, Token::Number(2.0), Token::Plus, Token::False, Token::Slash, Token::True, Token::EOF]);
+    let tokens = lex(str).unwrap();
+    assert_eq!(tokens, vec![Token::Number(4.0), Token::BinOp(BinOp::Star), Token::Number(2.0), Token::BinOp(BinOp::Plus), Token::Number(1.0), Token::BinOp(BinOp::Minus), Token::Number(2.0), Token::BinOp(BinOp::Plus), Token::False, Token::BinOp(BinOp::Slash), Token::True, Token::EOF]);
 }
 
 #[test]
 fn test_lex_decimals() {
     let str = "4.123-123.123";
-    assert_eq!(lex(str), vec![Token::Number(4.123), Token::Minus, Token::Number(123.123), Token::EOF]);
+    assert_eq!(lex(str).unwrap(), vec![Token::Number(4.123), Token::BinOp(BinOp::Minus), Token::Number(123.123), Token::EOF]);
 }
 
 #[test]
 fn test_lex_equality() {
     let str = "4 != 5 == 6";
-    assert_eq!(lex(str), vec![Token::Number(4.0), Token::BangEq, Token::Number(5.0), Token::EqEq, Token::Number(6.0), Token::EOF]);
+    assert_eq!(lex(str).unwrap(), vec![Token::Number(4.0), Token::BinOp(BinOp::BangEq), Token::Number(5.0), Token::BinOp(BinOp::EqEq), Token::Number(6.0), Token::EOF]);
 }
 
 #[test]
 fn test_lex_logical_op() {
     let str = "4 && 5 || 6";
-    assert_eq!(lex(str), vec![Token::Number(4.0), Token::And, Token::Number(5.0), Token::Or, Token::Number(6.0), Token::EOF]);
+    assert_eq!(lex(str).unwrap(), vec![Token::Number(4.0), Token::LogicalOp(LogicalOp::And), Token::Number(5.0), Token::LogicalOp(LogicalOp::Or), Token::Number(6.0), Token::EOF]);
 }
