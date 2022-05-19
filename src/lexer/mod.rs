@@ -1,6 +1,5 @@
 mod types;
 
-use std::convert::Infallible;
 pub use types::{Token, TokenType, BinOp, LogicalOp};
 
 pub fn lex(str: &str) -> LexerResult {
@@ -84,8 +83,7 @@ impl<'a> Lexer<'a> {
     }
     fn number_usize(&mut self, skip: usize) -> Result<usize, String> {
         while self.peek().is_digit(10) { self.advance(); }
-        let num = self.src.chars().skip(self.start + skip).take(self.current - (self.start+skip)).collect::<String>();
-        println!("{}", num);
+        let num = self.src.chars().skip(self.start + skip).take(self.current - (self.start + skip)).collect::<String>();
         let usize = match num.parse::<usize>() {
             Ok(float) => float,
             Err(_) => {
@@ -113,7 +111,7 @@ impl<'a> Lexer<'a> {
             self.add_token(Token::String(src));
         }
 
-            // }
+        // }
         // };
         Ok(())
     }
@@ -131,7 +129,6 @@ impl<'a> Lexer<'a> {
     }
     fn scan_token(&mut self) -> Result<(), String> {
         let c = self.advance();
-        println!("{}", c);
         match c {
             '$' => {
                 let num = self.number_usize(1)?;
@@ -197,6 +194,10 @@ impl<'a> Lexer<'a> {
                     self.add_token(Token::BinOp(BinOp::Slash));
                 }
             }
+            '{' => self.add_token(Token::LeftBrace),
+            '}' => self.add_token(Token::RightBrace),
+            '(' => self.add_token(Token::LeftParen),
+            ')' => self.add_token(Token::RightParen),
             '"' => self.string()?,
             '\r' => (),
             '\t' => (),
@@ -240,6 +241,12 @@ impl<'a> Lexer<'a> {
         // ));
         Ok(self.tokens.clone())
     }
+}
+
+#[test]
+fn test_braces() {
+    assert_eq!(lex("{ } ( ) (( )) {{ }}").unwrap(),
+               vec![Token::LeftBrace, Token::RightBrace, Token::LeftParen, Token::RightParen, Token::LeftParen, Token::LeftParen, Token::RightParen, Token::RightParen, Token::LeftBrace, Token::LeftBrace, Token::RightBrace, Token::RightBrace, Token::EOF]);
 }
 
 #[test]

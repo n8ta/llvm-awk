@@ -20,6 +20,7 @@ pub enum LogicalOp {
 
 #[derive(Debug, Clone, PartialOrd, PartialEq)]
 pub enum Token {
+    Semicolon,
     Column(usize),
     BinOp(BinOp),
     LogicalOp(LogicalOp),
@@ -29,6 +30,11 @@ pub enum Token {
     False,
     True,
     EOF,
+    LeftBrace,
+    RightBrace,
+    LeftParen,
+    RightParen,
+    Print,
 }
 
 #[derive(Debug, Clone, PartialOrd, PartialEq, Hash, Eq, Ord)]
@@ -52,6 +58,12 @@ pub enum TokenType {
     True,
     EOF,
     Column,
+    LeftBrace,
+    RightBrace,
+    LeftParen,
+    RightParen,
+    Print,
+    Semicolon
 }
 
 impl Token {
@@ -85,6 +97,12 @@ impl Token {
             Token::True => TokenType::True,
             Token::EOF => TokenType::EOF,
             Token::Column(_) => TokenType::Column,
+            Token::LeftBrace => TokenType::LeftBrace,
+            Token::RightBrace => TokenType::RightBrace,
+            Token::LeftParen => TokenType::LeftParen,
+            Token::RightParen => TokenType::RightParen,
+            Token::Print => TokenType::Print,
+            Token::Semicolon => TokenType::Semicolon,
         }
     }
 }
@@ -111,6 +129,12 @@ impl TokenType {
             TokenType::EOF => "EOF",
             TokenType::BangEq => "BangEq",
             TokenType::Column => "Column",
+            TokenType::LeftBrace => "LeftBrace",
+            TokenType::RightBrace => "RightBrace",
+            TokenType::LeftParen => "LeftParen",
+            TokenType::RightParen => "RightParen",
+            TokenType::Print => "Print",
+            TokenType::Semicolon => "Semicolon"
         }
     }
 }

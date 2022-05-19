@@ -1,0 +1,29 @@
+program: block*
+stmt:
+    expr ";"
+    print " " expr ";"
+block: expr? "{" stmt "}"
+num: [0-9]+ ("." ([0-9]*)?)?
+add_sub_op:
+    "+"
+    "-"
+mult_div_op:
+    "*"
+    "/"
+eq_op:
+    "!="
+    "=="
+comp_op
+    "<="
+    "<"
+    ">"
+    ">="
+expr: equality
+equality: comparison ( eq_op comparison ) *
+comparison: term (ad_sub_op term ) *
+term: primary ( mult_div_op primary ) *
+primary:
+    num
+    "(" expr ")"
+
+
