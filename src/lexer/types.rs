@@ -48,6 +48,7 @@ impl Display for LogicalOp {
 
 #[derive(Debug, Clone, PartialOrd, PartialEq)]
 pub enum Token {
+    Eq,
     Semicolon,
     Column(usize),
     BinOp(BinOp),
@@ -63,6 +64,9 @@ pub enum Token {
     LeftParen,
     RightParen,
     Print,
+    Ret,
+    If,
+    Else,
 }
 
 #[derive(Debug, Clone, PartialOrd, PartialEq, Hash, Eq, Ord)]
@@ -91,7 +95,11 @@ pub enum TokenType {
     LeftParen,
     RightParen,
     Print,
-    Semicolon
+    Semicolon,
+    Eq,
+    Ret,
+    If,
+    Else,
 }
 
 impl Token {
@@ -131,6 +139,10 @@ impl Token {
             Token::RightParen => TokenType::RightParen,
             Token::Print => TokenType::Print,
             Token::Semicolon => TokenType::Semicolon,
+            Token::Eq => TokenType::Eq,
+            Token::Ret => TokenType::Ret,
+            Token::If => TokenType::If,
+            Token::Else => TokenType::Else,
         }
     }
 }
@@ -162,7 +174,11 @@ impl TokenType {
             TokenType::LeftParen => "LeftParen",
             TokenType::RightParen => "RightParen",
             TokenType::Print => "Print",
-            TokenType::Semicolon => "Semicolon"
+            TokenType::Semicolon => "Semicolon",
+            TokenType::Eq => "Eq",
+            TokenType::Ret => "Ret",
+            TokenType::If => "If",
+            TokenType::Else => "Else",
         }
     }
 }

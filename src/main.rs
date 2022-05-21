@@ -35,5 +35,5 @@ fn main() {
     let tokens = lex(&contents).unwrap();
     let program = parse(tokens);
 
-    codgen::compile_and_run(program.expr());
+    codgen::compile_and_run(program);
 }

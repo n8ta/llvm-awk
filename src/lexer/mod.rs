@@ -40,15 +40,6 @@ impl<'a> Lexer<'a> {
     }
     fn add_token(&mut self, tt: Token) {
         self.tokens.push(tt);
-        // self.tokens.push(
-        //     Token::new_src(
-        //         tt,
-        //         self.start,
-        //         self.current - self.start,
-        //         self.line,
-        //         self.source.clone(),
-        //     )
-        // );
     }
     fn string(&mut self) -> Result<(), String> {
         while self.peek() != '"' && !self.is_at_end() {
@@ -61,7 +52,6 @@ impl<'a> Lexer<'a> {
         }
         self.advance();
         let str = self.src.chars().skip(self.start + 1).take(self.current - self.start - 2).collect::<String>();
-        // let sym = self.symbolizer.get_symbol(str);
         self.add_token(Token::String(str));
         return Ok(());
     }
@@ -97,16 +87,17 @@ impl<'a> Lexer<'a> {
     }
     fn identifier(&mut self) -> Result<(), String> {
         while self.peek().is_alphanumeric() { self.advance(); }
-        // let ident = self.src.chars().skip(self.start).take(self.current - self.start).collect::<String>();
-        // let fetched: Option<Token> = self.keywords.get(&ident).and_then(|t| Some(t.clone()));
-        // match fetched {
-        //     Some(k) => self.add_token(k.clone()),
-        //     None => {
         let src = self.src.chars().skip(self.start).take(self.current - self.start).collect();
         if src == "true" {
             self.add_token(Token::True);
         } else if src == "false" {
             self.add_token(Token::False);
+        } else if src == "return" {
+            self.add_token(Token::Ret);
+        } else if src == "if" {
+            self.add_token(Token::If);
+        } else if src == "else" {
+            self.add_token(Token::Else);
         } else {
             self.add_token(Token::String(src));
         }
@@ -138,7 +129,6 @@ impl<'a> Lexer<'a> {
             // ')' => self.add_token(Token::RightParen),
             // '{' => self.add_token(Token::LeftBrace),
             // '}' => self.add_token(Token::RightBrace),
-            // ',' => self.add_token(Token::Comma),
             '-' => self.add_token(Token::BinOp(BinOp::Minus)),
             '+' => self.add_token(Token::BinOp(BinOp::Plus)),
             // ';' => self.add_token(Token::Semicolon),
@@ -167,7 +157,7 @@ impl<'a> Lexer<'a> {
             '=' => {
                 let tt = match self.matches('=') {
                     true => Token::BinOp(BinOp::EqEq),
-                    false => todo!("assignment") //Token::Eq
+                    false => Token::Eq,
                 };
                 self.add_token(tt)
             }
@@ -198,6 +188,7 @@ impl<'a> Lexer<'a> {
             '}' => self.add_token(Token::RightBrace),
             '(' => self.add_token(Token::LeftParen),
             ')' => self.add_token(Token::RightParen),
+            ';' => self.add_token(Token::Semicolon),
             '"' => self.string()?,
             '\r' => (),
             '\t' => (),
@@ -210,7 +201,7 @@ impl<'a> Lexer<'a> {
                 } else if c.is_alphabetic() {
                     self.identifier()?;
                 } else {
-                    return Err(format!("Unexpected token `{}`", c));
+                    return Err(format!("Unexpected token::: `{}`", c));
                 }
             }
         }
@@ -287,4 +278,27 @@ fn test_lex_equality() {
 fn test_lex_logical_op() {
     let str = "4 && 5 || 6";
     assert_eq!(lex(str).unwrap(), vec![Token::Number(4.0), Token::LogicalOp(LogicalOp::And), Token::Number(5.0), Token::LogicalOp(LogicalOp::Or), Token::Number(6.0), Token::EOF]);
+}
+
+#[test]
+fn test_lex_assignment() {
+    let str = "abc = 4";
+    assert_eq!(lex(str).unwrap(), vec![Token::String("abc".to_string()), Token::Eq, Token::Number(4.0), Token::EOF]);
+}
+#[test]
+fn test_ret() {
+    let str = "return 1 return abc";
+    assert_eq!(lex(str).unwrap(), vec![Token::Ret, Token::Number(1.0), Token::Ret, Token::String(format!("abc")), Token::EOF]);
+}
+
+#[test]
+fn test_if_else() {
+    let str = "if (1) { 2 } else { 3 }";
+    assert_eq!(lex(str).unwrap(), vec![Token::If, Token::LeftParen, Token::Number(1.0), Token::RightParen, Token::LeftBrace, Token::Number(2.0), Token::RightBrace, Token::Else, Token::LeftBrace, Token::Number(3.0), Token::RightBrace, Token::EOF]);
+}
+
+#[test]
+fn test_if_only() {
+    let str = "if (1) { 2 }";
+    assert_eq!(lex(str).unwrap(), vec![Token::If, Token::LeftParen, Token::Number(1.0), Token::RightParen, Token::LeftBrace, Token::Number(2.0), Token::RightBrace, Token::EOF]);
 }

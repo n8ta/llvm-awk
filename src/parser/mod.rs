@@ -69,6 +69,10 @@ impl Parser {
         return self.tokens[self.current].clone();
     }
 
+    fn peek_next(&self) -> Token {
+        return self.tokens[self.current + 1].clone();
+    }
+
     fn is_at_end(&self) -> bool {
         self.tokens[self.current].ttype() == TokenType::EOF
     }
@@ -89,22 +93,64 @@ impl Parser {
         self.consume(TokenType::RightBrace, "Block ends with }");
         b
     }
-    fn stmts(&mut self) -> Vec<Stmt> {
-        let mut first = true;
+    fn group(&mut self) -> Stmt {
+        self.consume(TokenType::LeftBrace, "Expected a '}'");
+        let s = self.stmts();
+        self.consume(TokenType::RightBrace, "Expected a '}'");
+        s
+    }
+
+    fn stmts(&mut self) -> Stmt {
         let mut stmts = vec![];
         while self.peek().ttype() != TokenType::RightBrace {
-            if !first {
-                self.consume(TokenType::Semicolon, &format!("Expected a ';' after a statement. Found a {}", TokenType::name(self.peek().ttype())));
-            }
-            first = false;
+            println!("{:?}", self.peek());
             let stmt = if self.matches(vec![TokenType::Print]) {
-                Stmt::Print(self.expression())
+                let s = Stmt::Print(self.expression());
+                self.consume(TokenType::Semicolon, "Expected ; after print");
+                s
+            } else if self.peek_next().ttype() == TokenType::Eq {
+                let str = if let Token::String(str) = self.consume(TokenType::String, "Expected identifier before '='") { str } else { panic!("Expected identifier before '='") };
+                self.consume(TokenType::Eq, "Expected '=' after identifier");
+                let s = Stmt::Assign(str, self.expression());
+                self.consume(TokenType::Semicolon, "Expected ';' after '='");
+                s
+            } else if self.matches(vec![TokenType::Ret]) {
+                let s = self.return_stmt();
+                self.consume(TokenType::Semicolon, "Expected ';' after return statement");
+                s
+            } else if self.matches(vec![TokenType::If]) {
+                self.if_stmt()
             } else {
-                Stmt::Expr(self.expression())
+                let s = Stmt::Expr(self.expression());
+                self.consume(TokenType::Semicolon, "Expected ';' after statement");
+                s
             };
             stmts.push(stmt);
         }
-        stmts
+        if stmts.len() == 1 {
+            return stmts.pop().unwrap();
+        }
+        Stmt::Group(stmts)
+    }
+    fn return_stmt(&mut self) -> Stmt {
+        if self.peek().ttype() == TokenType::Semicolon {
+            Stmt::Return(None)
+        } else {
+            Stmt::Return(Some(self.expression()))
+        }
+    }
+    fn if_stmt(&mut self) -> Stmt {
+        println!("if statement");
+        self.consume(TokenType::LeftParen, "Expected '(' after if");
+        let predicate = self.expression();
+        self.consume(TokenType::RightParen, "Expected ')' after if predicate");
+        let then_blk = self.group();
+        let else_blk = if self.matches(vec![TokenType::Else]) {
+            Some(Box::new(self.group()))
+        } else {
+            None
+        };
+        Stmt::If(predicate, Box::new(then_blk), else_blk)
     }
     fn expression(&mut self) -> Expr {
         self.equality()
@@ -162,7 +208,11 @@ impl Parser {
                 self.consume(TokenType::RightParen, "Missing closing ')' after group");
                 expr
             }
-            t => panic!("Unexpected token {}", TokenType::name(t.ttype()))
+            Token::String(name) => {
+                self.consume(TokenType::String, "Expected to parse a string here");
+                Expr::Variable(name)
+            }
+            t => panic!("Unexpected token {:?} {}", t, TokenType::name(t.ttype()))
         }
     }
 }
@@ -171,10 +221,10 @@ impl Parser {
 fn test_ast_number() {
     use crate::lexer::lex;
 
-    assert_eq!(parse(lex("{1 + 2}").unwrap()),
+    assert_eq!(parse(lex("{1 + 2;}").unwrap()),
                Program::new(vec![
                    Block::new(None,
-                              vec![Stmt::Expr(Expr::BinOp(Box::new(Expr::Number(1.0)), BinOp::Plus, Box::new(Expr::Number(2.0))))])
+                              Stmt::Expr(Expr::BinOp(Box::new(Expr::Number(1.0)), BinOp::Plus, Box::new(Expr::Number(2.0)))))
                ]));
 }
 
@@ -185,7 +235,7 @@ fn test_ast_oop() {
     let left = Box::new(Expr::Number(1.0));
     let right = Box::new(Expr::BinOp(Box::new(Expr::Number(3.0)), BinOp::Star, Box::new(Expr::Number(2.0))));
     let mult = Stmt::Expr(Expr::BinOp(left, BinOp::Plus, right));
-    assert_eq!(parse(lex("{1 + 3 * 2}").unwrap()), Program::new(vec![Block::new(None, vec![mult])]));
+    assert_eq!(parse(lex("{1 + 3 * 2;}").unwrap()), Program::new(vec![Block::new(None, mult)]));
 }
 
 #[test]
@@ -194,28 +244,57 @@ fn test_ast_oop_2() {
     let left = Box::new(Expr::Number(2.0));
     let right = Box::new(Expr::BinOp(Box::new(Expr::Number(1.0)), BinOp::Star, Box::new(Expr::Number(3.0))));
     let mult = Stmt::Expr(Expr::BinOp(right, BinOp::Plus, left));
-    assert_eq!(parse(lex("{1 * 3 + 2}").unwrap()), Program::new(vec![Block::new(None, vec![mult])]));
+    assert_eq!(parse(lex("{1 * 3 + 2;}").unwrap()), Program::new(vec![Block::new(None, mult)]));
 }
 
 
+#[test]
+fn test_ast_assign() {
+    use crate::lexer::lex;
+    let stmt = Stmt::Assign(format!("abc"), Expr::Number(2.0));
+    assert_eq!(parse(lex("{abc = 2.0; }").unwrap()), Program::new(vec![Block::new(None, stmt)]));
+}
+
+#[test]
+fn test_ret() {
+    use crate::lexer::lex;
+    let stmt = Stmt::Return(Some(Expr::Number(2.0)));
+    assert_eq!(parse(lex("{return 2; }").unwrap()), Program::new(vec![Block::new(None, stmt)]));
+}
+
+#[test]
+fn test_ret_nil() {
+    use crate::lexer::lex;
+    let stmt = Stmt::Return(None);
+    assert_eq!(parse(lex("{return;}").unwrap()), Program::new(vec![Block::new(None, stmt)]));
+}
+
+#[test]
+fn test_if_else() {
+    use crate::lexer::lex;
+    let str = "{ if (1) { return 2; } else { return 3; }}";
+    let actual = parse(lex(str).unwrap());
+    assert_eq!(actual, Program::new(vec![Block::new(None, Stmt::If(Expr::Number(1.0), Box::new(Stmt::Return(Some(Expr::Number(2.0)))), Some(Box::new(Stmt::Return(Some(Expr::Number(3.0)))))))]));
+}
+
+#[test]
+fn test_if_only() {
+    use crate::lexer::lex;
+    let str = "{if (1) { return 2; }}";
+    assert_eq!(parse(lex(str).unwrap()), Program::new(vec![Block::new(None, Stmt::If(Expr::Number(1.0), Box::new(Stmt::Return(Some(Expr::Number(2.0)))), None))]));
+}
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+#[test]
+fn test_if_else_continues() {
+    use crate::lexer::lex;
+    let str = "{if (1) { return 2; } else { return 3; } 4.0;}";
+    let actual = parse(lex(str).unwrap());
+    assert_eq!(actual, Program::new(vec![Block::new(None,
+                                                    Stmt::Group(vec![
+                                                        Stmt::If(
+                                                            Expr::Number(1.0),
+                                                            Box::new(Stmt::Return(Some(Expr::Number(2.0)))),
+                                                            Some(Box::new(Stmt::Return(Some(Expr::Number(3.0)))))),
+                                                        Stmt::Expr(Expr::Number(4.0))]))]));
+}
