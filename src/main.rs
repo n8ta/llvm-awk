@@ -1,12 +1,12 @@
 use std::process::exit;
 
-use crate::lexer::lex;
+use crate::lexer::{BinOp, lex};
 use std::io::Read;
-use crate::parser::parse;
+use crate::parser::{Expr, parse};
 
 mod parser;
 mod lexer;
-
+mod codgen;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -35,9 +35,5 @@ fn main() {
     let tokens = lex(&contents).unwrap();
     let program = parse(tokens);
 
-
-
-
-
-
+    codgen::compile_and_run(program.expr());
 }

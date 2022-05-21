@@ -23,7 +23,6 @@ impl Parser {
     fn parse(&mut self) -> Program {
         let mut blocks: Vec<Block> = vec![];
         while !self.is_at_end() {
-            println!("block!");
             blocks.push(self.block())
         }
         Program::new(blocks)
@@ -76,7 +75,6 @@ impl Parser {
 
     fn advance(&mut self) -> Token {
         if !self.is_at_end() {
-            println!("advancing...");
             self.current += 1;
         }
         self.previous().unwrap()
@@ -125,7 +123,6 @@ impl Parser {
     }
     fn comparison(&mut self) -> Expr {
         let mut expr = self.term();
-        println!("term got {:?}", expr);
         while self.matches(vec![TokenType::Plus, TokenType::Minus]) {
             let op = match self.previous().unwrap() {
                 Token::BinOp(BinOp::Minus) => BinOp::Minus,
@@ -158,7 +155,7 @@ impl Parser {
             Token::Number(num) => {
                 self.advance();
                 Expr::Number(num)
-            },
+            }
             Token::LeftParen => {
                 self.consume(TokenType::LeftParen, "Expected to parse a left paren here");
                 let expr = self.expression();
@@ -176,12 +173,29 @@ fn test_ast_number() {
 
     assert_eq!(parse(lex("{1 + 2}").unwrap()),
                Program::new(vec![
-                   Block::new(None, vec![Stmt::Expr(Expr::BinOp(Box::new(Expr::Number(1.0)), BinOp::Plus, Box::new(Expr::Number(2.0))))])
+                   Block::new(None,
+                              vec![Stmt::Expr(Expr::BinOp(Box::new(Expr::Number(1.0)), BinOp::Plus, Box::new(Expr::Number(2.0))))])
                ]));
 }
 
 
+#[test]
+fn test_ast_oop() {
+    use crate::lexer::lex;
+    let left = Box::new(Expr::Number(1.0));
+    let right = Box::new(Expr::BinOp(Box::new(Expr::Number(3.0)), BinOp::Star, Box::new(Expr::Number(2.0))));
+    let mult = Stmt::Expr(Expr::BinOp(left, BinOp::Plus, right));
+    assert_eq!(parse(lex("{1 + 3 * 2}").unwrap()), Program::new(vec![Block::new(None, vec![mult])]));
+}
 
+#[test]
+fn test_ast_oop_2() {
+    use crate::lexer::lex;
+    let left = Box::new(Expr::Number(2.0));
+    let right = Box::new(Expr::BinOp(Box::new(Expr::Number(1.0)), BinOp::Star, Box::new(Expr::Number(3.0))));
+    let mult = Stmt::Expr(Expr::BinOp(right, BinOp::Plus, left));
+    assert_eq!(parse(lex("{1 * 3 + 2}").unwrap()), Program::new(vec![Block::new(None, vec![mult])]));
+}
 
 
 

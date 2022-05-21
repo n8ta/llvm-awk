@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter};
+
 #[derive(Debug, Clone, PartialOrd, PartialEq)]
 pub enum BinOp {
     Minus,
@@ -12,10 +14,36 @@ pub enum BinOp {
     EqEq,
 }
 
+impl Display for BinOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BinOp::Minus => f.write_str("-"),
+            BinOp::Plus => f.write_str("+"),
+            BinOp::Slash => f.write_str("/"),
+            BinOp::Star => f.write_str("*"),
+            BinOp::Greater => f.write_str(">"),
+            BinOp::GreaterEq => f.write_str(">="),
+            BinOp::Less => f.write_str("<"),
+            BinOp::LessEq => f.write_str("<="),
+            BinOp::BangEq => f.write_str("!="),
+            BinOp::EqEq => f.write_str("=="),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialOrd, PartialEq)]
 pub enum LogicalOp {
     And,
     Or,
+}
+
+impl Display for LogicalOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LogicalOp::And => f.write_str("&&"),
+            LogicalOp::Or => f.write_str("||"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialOrd, PartialEq)]
