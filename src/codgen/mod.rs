@@ -7,7 +7,7 @@ use inkwell::execution_engine::{ExecutionEngine, JitFunction};
 use inkwell::module::{Linkage, Module};
 use inkwell::{FloatPredicate, OptimizationLevel};
 use inkwell::types::{StructType};
-use inkwell::values::{FloatValue, PointerValue, CallSiteValue, CallableValue};
+use inkwell::values::{FloatValue, PointerValue, CallSiteValue, CallableValue, FunctionValue};
 use crate::{BinOp, Expr};
 use crate::parser::{Program, Stmt};
 
@@ -33,7 +33,7 @@ pub fn compile_and_run(prog: Program) {
     // }
 }
 
-const ROOT: &'static str = "crawk_root";
+const ROOT: &'static str = "main";
 
 type BodyFunc = unsafe extern "C" fn(f64) -> f64;
 
@@ -44,7 +44,7 @@ struct CodeGen<'ctx> {
     counter: usize,
     value_type: StructType<'ctx>,
     scope: Vec<HashMap<String, FloatValue<'ctx>>>,
-    print_func: Option<CallableValue<'ctx>>,
+    print_func: FunctionValue<'ctx>
 }
 
 impl<'ctx> CodeGen<'ctx> {
@@ -54,6 +54,9 @@ impl<'ctx> CodeGen<'ctx> {
         let i8 = context.i8_type();
         let i64 = context.i64_type();
         let value_type = context.struct_type(&[i8.into(), i64.into()], false);
+        let f64_type = context.f64_type();
+        let print_f64_type = context.void_type().fn_type(&[f64_type.into()], false);
+        let print_func = module.add_function("print_f64", print_f64_type, Some(Linkage::ExternalWeak));
         let codegen = CodeGen {
             module,
             builder: context.create_builder(),
@@ -61,7 +64,7 @@ impl<'ctx> CodeGen<'ctx> {
             counter: 0,
             value_type,
             scope: vec![HashMap::new()],
-            print_func: None,
+            print_func,
         };
         codegen
     }
@@ -87,10 +90,10 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn compile(&mut self, prog: Program, context: &'ctx Context)  {
         let f64_type = context.f64_type();
-        let void_type = context.void_type();
 
         let f64_func = f64_type.fn_type(&[], false);
         let function = self.module.add_function(ROOT, f64_func, Some(Linkage::External));
+
         let bb = context.append_basic_block(function, ROOT);
 
         self.builder.position_at_end(bb);
@@ -114,7 +117,7 @@ impl<'ctx> CodeGen<'ctx> {
             Stmt::Expr(_) => panic!("cannot compile expression stmt"),
             Stmt::Print(expr) => {
                 let res = self.compile_expr(expr, context);
-                // self.builder.build_call("printf", &[res.into()], "print_float_64");
+                self.builder.build_call(self.print_func, &[res.into()], "print_f64_call");
             }
             Stmt::Assign(name, expr) => {
                 let fin = self.compile_expr(expr, context);

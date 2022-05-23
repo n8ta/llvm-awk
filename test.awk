@@ -1,1 +1,1 @@
-{ return 123; }
+{ print 123; return 0; }

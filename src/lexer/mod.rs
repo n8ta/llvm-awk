@@ -98,6 +98,8 @@ impl<'a> Lexer<'a> {
             self.add_token(Token::If);
         } else if src == "else" {
             self.add_token(Token::Else);
+        } else if src == "print" {
+            self.add_token(Token::Print);
         } else {
             self.add_token(Token::String(src));
         }

@@ -117,11 +117,15 @@ impl Parser {
                 let s = self.return_stmt();
                 self.consume(TokenType::Semicolon, "Expected ';' after return statement");
                 s
+            } else if self.matches(vec![TokenType::Print]) {
+                let expr = self.expression();
+                self.consume(TokenType::Semicolon, "Expected ';' after print");
+                Stmt::Print(expr)
             } else if self.matches(vec![TokenType::If]) {
                 self.if_stmt()
             } else {
                 let s = Stmt::Expr(self.expression());
-                self.consume(TokenType::Semicolon, "Expected ';' after statement");
+                self.consume(TokenType::Semicolon, "Expected ';' after expression statement");
                 s
             };
             stmts.push(stmt);
@@ -280,6 +284,13 @@ fn test_if_only() {
     use crate::lexer::lex;
     let str = "{if (1) { return 2; }}";
     assert_eq!(parse(lex(str).unwrap()), Program::new(vec![Block::new(None, Stmt::If(Expr::Number(1.0), Box::new(Stmt::Return(Some(Expr::Number(2.0)))), None))]));
+}
+
+#[test]
+fn test_print() {
+    use crate::lexer::lex;
+    let str = "{print 1;}";
+    assert_eq!(parse(lex(str).unwrap()), Program::new(vec![Block::new(None, Stmt::Print(Expr::Number(1.0)))]));
 }
 
 
