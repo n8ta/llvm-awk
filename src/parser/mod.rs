@@ -103,7 +103,6 @@ impl Parser {
     fn stmts(&mut self) -> Stmt {
         let mut stmts = vec![];
         while self.peek().ttype() != TokenType::RightBrace {
-            println!("{:?}", self.peek());
             let stmt = if self.matches(vec![TokenType::Print]) {
                 let s = Stmt::Print(self.expression());
                 self.consume(TokenType::Semicolon, "Expected ; after print");
@@ -140,7 +139,6 @@ impl Parser {
         }
     }
     fn if_stmt(&mut self) -> Stmt {
-        println!("if statement");
         self.consume(TokenType::LeftParen, "Expected '(' after if");
         let predicate = self.expression();
         self.consume(TokenType::RightParen, "Expected ')' after if predicate");

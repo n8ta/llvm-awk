@@ -1,28 +1,41 @@
+use std::any::Any;
 use std::collections::HashMap;
+use std::path::Path;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::execution_engine::{ExecutionEngine, JitFunction};
-use inkwell::module::Module;
+use inkwell::module::{Linkage, Module};
 use inkwell::{FloatPredicate, OptimizationLevel};
 use inkwell::types::{StructType};
-use inkwell::values::FloatValue;
+use inkwell::values::{FloatValue, PointerValue, CallSiteValue, CallableValue};
 use crate::{BinOp, Expr};
 use crate::parser::{Program, Stmt};
+
+
+// Make this callable from C
+
+#[no_mangle]
+pub extern "C" fn print_float_64(num: f64) {
+    println!("{}", num);
+}
 
 pub fn compile_and_run(prog: Program) {
     let context = Context::create();
     let mut codegen = CodeGen::new(&context);
-
-    let root: JitFunction<BodyFunc> = codegen.compile(prog, &context);
-
-    unsafe {
-        println!("=> {}", root.call());
-    }
+    codegen.compile(prog, &context);
+    // let root: JitFunction<BodyFunc> = ;
+    // let ptr = print_float_64 as *const fn(f64);
+    // let ptr_to_f64 = unsafe {
+    //     std::mem::transmute::<*const fn(f64), *const f64>(ptr)
+    // };
+    // unsafe {
+    //     println!("=> {}", root.call(*ptr_to_f64))
+    // }
 }
 
-const ROOT: &'static str = "root";
+const ROOT: &'static str = "crawk_root";
 
-type BodyFunc = unsafe extern "C" fn() -> f64;
+type BodyFunc = unsafe extern "C" fn(f64) -> f64;
 
 struct CodeGen<'ctx> {
     module: Module<'ctx>,
@@ -31,12 +44,13 @@ struct CodeGen<'ctx> {
     counter: usize,
     value_type: StructType<'ctx>,
     scope: Vec<HashMap<String, FloatValue<'ctx>>>,
+    print_func: Option<CallableValue<'ctx>>,
 }
 
 impl<'ctx> CodeGen<'ctx> {
     fn new(context: &'ctx Context) -> Self {
         let module = context.create_module("sum");
-        let execution_engine = module.create_jit_execution_engine(OptimizationLevel::None).expect("To be able to create exec engine");
+        let execution_engine = module.create_execution_engine().expect("To be able to create exec engine");
         let i8 = context.i8_type();
         let i64 = context.i64_type();
         let value_type = context.struct_type(&[i8.into(), i64.into()], false);
@@ -47,6 +61,7 @@ impl<'ctx> CodeGen<'ctx> {
             counter: 0,
             value_type,
             scope: vec![HashMap::new()],
+            print_func: None,
         };
         codegen
     }
@@ -70,25 +85,37 @@ impl<'ctx> CodeGen<'ctx> {
         self.scope.pop();
     }
 
-    fn compile(&mut self, prog: Program, context: &'ctx Context) -> JitFunction<BodyFunc> {
+    fn compile(&mut self, prog: Program, context: &'ctx Context)  {
         let f64_type = context.f64_type();
+        let void_type = context.void_type();
+
         let f64_func = f64_type.fn_type(&[], false);
-        let function = self.module.add_function(ROOT, f64_func, None);
+        let function = self.module.add_function(ROOT, f64_func, Some(Linkage::External));
         let bb = context.append_basic_block(function, ROOT);
+
         self.builder.position_at_end(bb);
 
         for blk in prog.body {
             self.compile_stmt(blk.body, context);
         }
 
+        let str = self.module.print_to_string().to_string().replace("\\n", "\n");
 
-        unsafe { self.execution_engine.get_function(ROOT).ok() }.expect("to get root func")
+        self.module.write_bitcode_to_path(Path::new("/tmp/crawk.bc"));
+
+
+        println!("{}", str);
+
+        // unsafe { self.execution_engine.get_function(ROOT).ok() }.expect("to get root func")
     }
 
     fn compile_stmt(&mut self, stmt: Stmt, context: &'ctx Context) {
         match stmt {
             Stmt::Expr(_) => panic!("cannot compile expression stmt"),
-            Stmt::Print(_) => panic!("cannot compile print stmt"),
+            Stmt::Print(expr) => {
+                let res = self.compile_expr(expr, context);
+                // self.builder.build_call("printf", &[res.into()], "print_float_64");
+            }
             Stmt::Assign(name, expr) => {
                 let fin = self.compile_expr(expr, context);
                 // todo: check if name is already in scope SSA!
@@ -111,10 +138,9 @@ impl<'ctx> CodeGen<'ctx> {
             Stmt::If(test, true_blk, false_blk) => {
                 let false_blk = if let Some(fal) = false_blk { fal } else { panic!("must have false block") };
 
-
                 let then_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "then");
                 let else_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "else");
-                let merge_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "merge");
+                let continue_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "merge");
 
                 let predicate = self.compile_expr(test, context);
                 let zero = context.f64_type().const_float(0.0);
@@ -122,14 +148,14 @@ impl<'ctx> CodeGen<'ctx> {
 
                 self.builder.build_conditional_branch(comparison, then_bb, else_bb);
 
-
                 self.builder.position_at_end(then_bb);
                 self.compile_stmt(*true_blk, context);
+                self.builder.build_unconditional_branch(continue_bb);
 
                 self.builder.position_at_end(else_bb);
                 self.compile_stmt(*false_blk, context);
-
-                self.builder.position_at_end(merge_bb);
+                self.builder.build_unconditional_branch(continue_bb);
+                self.builder.position_at_end(continue_bb);
             }
         }
     }

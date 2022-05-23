@@ -1,1 +1,1 @@
-{ if (1) { 123;} else {return 345; } }
+{ return 123; }
