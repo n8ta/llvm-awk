@@ -13,12 +13,23 @@ pub enum Stmt {
 
 #[derive(Debug, PartialEq)]
 pub struct Block {
-    pub test: Option<Expr>,
+    pub test: Test,
     pub body: Stmt,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum Test {
+    Expr(Expr),
+    Begin,
+    End,
+    Always,
+}
+
 impl Block {
-    pub fn new(test: Option<Expr>, body: Stmt) -> Block { Block { test, body } }
+    pub fn new_begin(body: Stmt) -> Block { Block { test: Test::Begin, body } }
+    pub fn new_end(body: Stmt) -> Block { Block { test: Test::End, body } }
+    pub fn new_always(body: Stmt) -> Block { Block { test: Test::Always, body } }
+    pub fn new_expr(expr: Expr, body: Stmt) -> Block { Block { test: Test::Expr(expr), body } }
 }
 
 #[derive(Debug, PartialEq, Clone)]

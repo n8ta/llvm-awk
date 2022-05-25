@@ -86,9 +86,16 @@ impl Parser {
 
     fn block(&mut self) -> Block {
         let b = if self.matches(vec![TokenType::LeftBrace]) {
-            Block::new(None, self.stmts())
+            Block::new_always(self.stmts())
+        } else if self.matches(vec![TokenType::Begin]) {
+            self.consume(TokenType::LeftBrace, "Expected a '}' after a begin");
+            Block::new_begin(self.stmts())
+        } else if self.matches(vec![TokenType::End]) {
+            self.consume(TokenType::LeftBrace, "Expected a '}' after a end");
+            Block::new_end(self.stmts())
         } else {
-            Block::new(Some(self.expression()), self.stmts())
+            self.consume(TokenType::LeftBrace, "Expected a '}' after a test");
+            Block::new_expr(self.expression(), self.stmts())
         };
         self.consume(TokenType::RightBrace, "Block ends with }");
         b
@@ -229,8 +236,7 @@ fn test_ast_number() {
 
     assert_eq!(parse(lex("{1 + 2;}").unwrap()),
                Program::new(vec![
-                   Block::new(None,
-                              Stmt::Expr(Expr::BinOp(Box::new(Expr::Number(1.0)), BinOp::Plus, Box::new(Expr::Number(2.0)))))
+                   Block::new_always(                              Stmt::Expr(Expr::BinOp(Box::new(Expr::Number(1.0)), BinOp::Plus, Box::new(Expr::Number(2.0)))))
                ]));
 }
 
@@ -241,7 +247,7 @@ fn test_ast_oop() {
     let left = Box::new(Expr::Number(1.0));
     let right = Box::new(Expr::BinOp(Box::new(Expr::Number(3.0)), BinOp::Star, Box::new(Expr::Number(2.0))));
     let mult = Stmt::Expr(Expr::BinOp(left, BinOp::Plus, right));
-    assert_eq!(parse(lex("{1 + 3 * 2;}").unwrap()), Program::new(vec![Block::new(None, mult)]));
+    assert_eq!(parse(lex("{1 + 3 * 2;}").unwrap()), Program::new(vec![Block::new_always(mult)]));
 }
 
 #[test]
@@ -250,7 +256,7 @@ fn test_ast_oop_2() {
     let left = Box::new(Expr::Number(2.0));
     let right = Box::new(Expr::BinOp(Box::new(Expr::Number(1.0)), BinOp::Star, Box::new(Expr::Number(3.0))));
     let mult = Stmt::Expr(Expr::BinOp(right, BinOp::Plus, left));
-    assert_eq!(parse(lex("{1 * 3 + 2;}").unwrap()), Program::new(vec![Block::new(None, mult)]));
+    assert_eq!(parse(lex("{1 * 3 + 2;}").unwrap()), Program::new(vec![Block::new_always(mult)]));
 }
 
 
@@ -258,21 +264,21 @@ fn test_ast_oop_2() {
 fn test_ast_assign() {
     use crate::lexer::lex;
     let stmt = Stmt::Assign(format!("abc"), Expr::Number(2.0));
-    assert_eq!(parse(lex("{abc = 2.0; }").unwrap()), Program::new(vec![Block::new(None, stmt)]));
+    assert_eq!(parse(lex("{abc = 2.0; }").unwrap()), Program::new(vec![Block::new_always(stmt)]));
 }
 
 #[test]
 fn test_ret() {
     use crate::lexer::lex;
     let stmt = Stmt::Return(Some(Expr::Number(2.0)));
-    assert_eq!(parse(lex("{return 2; }").unwrap()), Program::new(vec![Block::new(None, stmt)]));
+    assert_eq!(parse(lex("{return 2; }").unwrap()), Program::new(vec![Block::new_always(stmt)]));
 }
 
 #[test]
 fn test_ret_nil() {
     use crate::lexer::lex;
     let stmt = Stmt::Return(None);
-    assert_eq!(parse(lex("{return;}").unwrap()), Program::new(vec![Block::new(None, stmt)]));
+    assert_eq!(parse(lex("{return;}").unwrap()), Program::new(vec![Block::new_always(stmt)]));
 }
 
 #[test]
@@ -280,28 +286,28 @@ fn test_if_else() {
     use crate::lexer::lex;
     let str = "{ if (1) { return 2; } else { return 3; }}";
     let actual = parse(lex(str).unwrap());
-    assert_eq!(actual, Program::new(vec![Block::new(None, Stmt::If(Expr::Number(1.0), Box::new(Stmt::Return(Some(Expr::Number(2.0)))), Some(Box::new(Stmt::Return(Some(Expr::Number(3.0)))))))]));
+    assert_eq!(actual, Program::new(vec![Block::new_always(Stmt::If(Expr::Number(1.0), Box::new(Stmt::Return(Some(Expr::Number(2.0)))), Some(Box::new(Stmt::Return(Some(Expr::Number(3.0)))))))]));
 }
 
 #[test]
 fn test_if_only() {
     use crate::lexer::lex;
     let str = "{if (1) { return 2; }}";
-    assert_eq!(parse(lex(str).unwrap()), Program::new(vec![Block::new(None, Stmt::If(Expr::Number(1.0), Box::new(Stmt::Return(Some(Expr::Number(2.0)))), None))]));
+    assert_eq!(parse(lex(str).unwrap()), Program::new(vec![Block::new_always(Stmt::If(Expr::Number(1.0), Box::new(Stmt::Return(Some(Expr::Number(2.0)))), None))]));
 }
 
 #[test]
 fn test_print() {
     use crate::lexer::lex;
     let str = "{print 1;}";
-    assert_eq!(parse(lex(str).unwrap()), Program::new(vec![Block::new(None, Stmt::Print(Expr::Number(1.0)))]));
+    assert_eq!(parse(lex(str).unwrap()), Program::new(vec![Block::new_always(Stmt::Print(Expr::Number(1.0)))]));
 }
 
 #[test]
 fn test_group() {
     use crate::lexer::lex;
     let str = "{{print 1;print 2;}}";
-    assert_eq!(parse(lex(str).unwrap()), Program::new(vec![Block::new(None, Stmt::Group(vec![Stmt::Print(Expr::Number(1.0)), Stmt::Print(Expr::Number(2.0))]))]));
+    assert_eq!(parse(lex(str).unwrap()), Program::new(vec![Block::new_always(Stmt::Group(vec![Stmt::Print(Expr::Number(1.0)), Stmt::Print(Expr::Number(2.0))]))]));
 }
 
 
@@ -310,11 +316,23 @@ fn test_if_else_continues() {
     use crate::lexer::lex;
     let str = "{if (1) { return 2; } else { return 3; } 4.0;}";
     let actual = parse(lex(str).unwrap());
-    assert_eq!(actual, Program::new(vec![Block::new(None,
+    assert_eq!(actual, Program::new(vec![Block::new_always(
                                                     Stmt::Group(vec![
                                                         Stmt::If(
                                                             Expr::Number(1.0),
                                                             Box::new(Stmt::Return(Some(Expr::Number(2.0)))),
                                                             Some(Box::new(Stmt::Return(Some(Expr::Number(3.0)))))),
                                                         Stmt::Expr(Expr::Number(4.0))]))]));
+}
+
+#[test]
+fn begin_end() {
+    use crate::lexer::lex;
+    let str = "BEGIN { print 1; } begin { print 2; } END { print 3; } end { print 4; }";
+    let actual = parse(lex(str).unwrap());
+    let b1 = Block::new_begin(Stmt::Print(Expr::Number(1.0)));
+    let b2 = Block::new_begin(Stmt::Print(Expr::Number(2.0)));
+    let e1 = Block::new_end(Stmt::Print(Expr::Number(3.0)));
+    let e2 = Block::new_end(Stmt::Print(Expr::Number(4.0)));
+    assert_eq!(actual, Program::new(vec![b1,b2,e1,e2]));
 }

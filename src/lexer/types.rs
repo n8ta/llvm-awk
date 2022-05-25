@@ -148,7 +148,7 @@ impl Token {
             Token::If => TokenType::If,
             Token::Else => TokenType::Else,
             Token::End => TokenType::End,
-            Token::Begin => TokenType::End,
+            Token::Begin => TokenType::Begin,
         }
     }
 }
