@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use crate::lexer::{BinOp, LogicalOp};
 

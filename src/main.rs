@@ -1,3 +1,5 @@
+extern crate core;
+
 use std::process::exit;
 
 use crate::lexer::{BinOp, lex};

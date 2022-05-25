@@ -10,7 +10,7 @@ use inkwell::basic_block::BasicBlock;
 use inkwell::types::{StructType};
 use inkwell::values::{AnyValue, BasicValue, FloatValue, FunctionValue};
 use crate::{BinOp, Expr};
-use crate::parser::{Program, Stmt};
+use crate::parser::{Test, Stmt, Program};
 
 #[no_mangle]
 pub extern "C" fn print_float_64(num: f64) {
@@ -27,8 +27,9 @@ const ROOT: &'static str = "main";
 
 type BodyFunc = unsafe extern "C" fn(f64) -> f64;
 
+type ScopeInfo<'ctx> = HashMap<String, FloatValue<'ctx>>;
 struct Scope<'ctx> {
-    values: HashMap<String, FloatValue<'ctx>>,
+    pub values: ScopeInfo<'ctx>,
 }
 
 struct Scopes<'ctx> {
@@ -54,9 +55,8 @@ impl<'ctx> Scopes<'ctx> {
     pub fn begin_scope(&mut self) {
         self.scopes.push(Scope { values: HashMap::default() });
     }
-    pub fn end_scope(&mut self) -> HashMap<String, FloatValue<'ctx>> {
-        let scope = self.scopes.pop().unwrap();
-        scope.values
+    pub fn end_scope(&mut self) -> ScopeInfo {
+        self.scopes.pop().unwrap().values
     }
     pub fn lookup(&self, name: &str) -> Option<FloatValue<'ctx>> {
         for scope in self.scopes.iter().rev() {
@@ -113,8 +113,14 @@ impl<'ctx> CodeGen<'ctx> {
 
         self.builder.position_at_end(bb);
 
-        for blk in prog.body {
-            self.compile_stmt(blk.body, context);
+        for block in prog.body.iter().filter(|b| b.test == Test::Begin) {
+            self.compile_block(&block, context);
+        }
+        for block in prog.body.iter().filter(|b| b.test != Test::Begin && b.test != Test::End) {
+            self.compile_block(&block, context);
+        }
+        for block in prog.body.iter().filter(|b| b.test == Test::End) {
+            self.compile_block(&block, context);
         }
 
         let str = self.module.print_to_string().to_string().replace("\\n", "\n");
@@ -127,7 +133,38 @@ impl<'ctx> CodeGen<'ctx> {
         // unsafe { self.execution_engine.get_function(ROOT).ok() }.expect("to get root func")
     }
 
-    fn compile_stmt(&mut self, stmt: Stmt, context: &'ctx Context) -> BasicBlock<'ctx> {
+    fn compile_block(&mut self, block: &crate::parser::Block, context: &'ctx Context) {
+        match &block.test {
+            Test::Expr(expr) => {
+                let test_passes_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "test_passes_bb");
+                let continue_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "block_continue");
+
+                let predicate = self.compile_expr(expr, context);
+                let zero = context.f64_type().const_float(0.0);
+                let comparison = self.builder.build_float_compare(FloatPredicate::OEQ, predicate, zero, "block_test");
+
+                self.builder.build_conditional_branch(comparison, test_passes_bb, continue_bb);
+
+                // --->test ---> test_pass_bb  ------> continue
+                //          \-----------------------------^
+
+                self.builder.position_at_end(test_passes_bb);
+                self.scopes.begin_scope();
+                let test_pass_bb_final = self.compile_stmt(&block.body, context);
+                self.builder.build_unconditional_branch(continue_bb);
+                let test_passes_scope = self.scopes.scopes.pop().unwrap().values;
+                // let test_passes_scope = self.scopes.end_scope();
+
+
+                // self.build_phi(vec![(test_pass_bb_final, test_passes_scope)], context);
+            }
+            Test::Begin | Test::End | Test::Always => {
+                self.compile_stmt(&block.body, context);
+            }
+        }
+    }
+
+    fn compile_stmt(&mut self, stmt: &Stmt, context: &'ctx Context) -> BasicBlock<'ctx> {
         match stmt {
             Stmt::Expr(_) => panic!("cannot compile expression stmt"),
             Stmt::Print(expr) => {
@@ -168,49 +205,72 @@ impl<'ctx> CodeGen<'ctx> {
 
                 self.builder.position_at_end(then_bb);
                 self.scopes.begin_scope();
-                let then_bb_final = self.compile_stmt(*true_blk, context);
-                let then_scope = self.scopes.end_scope();
+                let then_bb_final = self.compile_stmt(true_blk, context);
+                let then_scope = self.scopes.scopes.pop().unwrap().values;//end_scope();
                 self.builder.build_unconditional_branch(continue_bb);
 
 
                 self.builder.position_at_end(else_bb);
                 self.scopes.begin_scope();
-                let else_bb_final = self.compile_stmt(*false_blk, context);
+                let else_bb_final = self.compile_stmt(false_blk, context);
                 self.builder.build_unconditional_branch(continue_bb);
-                let else_scope = self.scopes.end_scope();
+                // let else_scope = self.scopes.end_scope();
+                let else_scope = self.scopes.scopes.pop().unwrap().values;//end_scope();
+
 
                 self.builder.position_at_end(continue_bb);
 
-                let mut handled = HashSet::new();
-                println!("fniishing");
-                for (assigned_var, definition) in then_scope.clone().iter().chain(else_scope.clone().iter()) {
-                    if handled.contains(assigned_var) { continue }
-                    if let Some(existing_defn) = self.scopes.lookup(&assigned_var) {
-                        println!("{}", assigned_var);
-                        handled.insert(assigned_var.clone());
-                        let value_from_if = then_scope.get(assigned_var).or(Some(&existing_defn)).unwrap();
-                        let value_from_else = else_scope.get(assigned_var).or(Some(&existing_defn)).unwrap();
-                        let phi = self.builder.build_phi(context.f64_type(), &format!("if_else_phi_{}", assigned_var));
-                        let value_from_if = value_from_if.as_basic_value_enum().into_float_value();
-                        let value_from_else = value_from_else.as_basic_value_enum().into_float_value();
-                        phi.add_incoming(&[(&value_from_if, then_bb_final), (&value_from_else, else_bb_final)]);
-                        self.scopes.insert(assigned_var.clone(), phi.as_any_value_enum().into_float_value());
-                    }
-                }
+                self.build_phi(vec![(then_bb_final, then_scope), (else_bb_final, else_scope)], context);
+
                 return continue_bb;
             }
         }
         self.builder.get_insert_block().unwrap()
     }
 
-    fn compile_expr(&mut self, expr: Expr, context: &'ctx Context) -> FloatValue<'ctx> {
+    fn build_phi(&mut self, predecessors: Vec<(BasicBlock<'ctx>, ScopeInfo<'ctx>)>, context: &'ctx Context) {
+        println!("building phi");
+        let mut handled = HashSet::new();
+        let mut variables = vec![];
+
+        for pred in predecessors.iter() {
+            for (name, _val) in pred.1.iter() {
+                variables.push(name.clone());
+            }
+        }
+
+        if variables.len() == 0 {
+            return
+        }
+
+
+
+        for assigned_var in variables {
+
+            if handled.contains(&assigned_var) { continue; }
+            handled.insert(assigned_var.clone());
+            let phi = self.builder.build_phi(context.f64_type(), &format!("phi_for_{}", assigned_var));
+            if let Some(existing_defn) = self.scopes.lookup(&assigned_var) {
+                let mut incoming: Vec<(&dyn BasicValue<'ctx>, BasicBlock<'ctx>)> = vec![];
+                for (pred_block, pred_scope) in predecessors.iter() {
+                    let value_in_block = pred_scope.get(&assigned_var)
+                        .or(Some(&existing_defn)).unwrap();
+                    incoming.push((value_in_block, *pred_block));
+                }
+                phi.add_incoming(incoming.as_slice())
+            }
+            self.scopes.insert(assigned_var, phi.as_any_value_enum().into_float_value())
+        }
+    }
+
+    fn compile_expr(&mut self, expr: &Expr, context: &'ctx Context) -> FloatValue<'ctx> {
         match expr {
             Expr::String(_str) => context.f64_type().const_float(1.0),
-            Expr::Number(num) => context.f64_type().const_float(num),
+            Expr::Number(num) => context.f64_type().const_float(*num),
             Expr::BinOp(left, op, right) => {
                 let name = self.name();
-                let l = self.compile_expr(*left, context);
-                let r = self.compile_expr(*right, context);
+                let l = self.compile_expr(left, context);
+                let r = self.compile_expr(right, context);
                 match op {
                     BinOp::Minus => self.builder.build_float_sub(l, r, &name),
                     BinOp::Plus => self.builder.build_float_add(l, r, &name),

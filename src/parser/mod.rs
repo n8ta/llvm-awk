@@ -1,8 +1,8 @@
 mod types;
 
 pub use types::{Stmt, Expr, Program};
+pub use crate::parser::types::{Block, Test};
 use crate::lexer::{BinOp, Token, TokenType};
-use crate::parser::types::Block;
 
 
 pub fn parse(tokens: Vec<Token>) -> Program {
