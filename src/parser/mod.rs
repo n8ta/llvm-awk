@@ -123,6 +123,10 @@ impl Parser {
                 Stmt::Print(expr)
             } else if self.matches(vec![TokenType::If]) {
                 self.if_stmt()
+            } else if self.matches(vec![TokenType::LeftBrace]) {
+                let s = self.stmts();
+                self.consume(TokenType::RightBrace, "Expected } after a scope");
+                s
             } else {
                 let s = Stmt::Expr(self.expression());
                 self.consume(TokenType::Semicolon, "Expected ';' after expression statement");
@@ -291,6 +295,13 @@ fn test_print() {
     use crate::lexer::lex;
     let str = "{print 1;}";
     assert_eq!(parse(lex(str).unwrap()), Program::new(vec![Block::new(None, Stmt::Print(Expr::Number(1.0)))]));
+}
+
+#[test]
+fn test_group() {
+    use crate::lexer::lex;
+    let str = "{{print 1;print 2;}}";
+    assert_eq!(parse(lex(str).unwrap()), Program::new(vec![Block::new(None, Stmt::Group(vec![Stmt::Print(Expr::Number(1.0)), Stmt::Print(Expr::Number(2.0))]))]));
 }
 
 

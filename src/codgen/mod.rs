@@ -1,18 +1,16 @@
 use std::any::Any;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::execution_engine::{ExecutionEngine, JitFunction};
 use inkwell::module::{Linkage, Module};
-use inkwell::{FloatPredicate, OptimizationLevel};
+use inkwell::{AddressSpace, FloatPredicate, OptimizationLevel};
+use inkwell::basic_block::BasicBlock;
 use inkwell::types::{StructType};
-use inkwell::values::{FloatValue, PointerValue, CallSiteValue, CallableValue, FunctionValue};
+use inkwell::values::{AnyValue, BasicValue, FloatValue, FunctionValue};
 use crate::{BinOp, Expr};
 use crate::parser::{Program, Stmt};
-
-
-// Make this callable from C
 
 #[no_mangle]
 pub extern "C" fn print_float_64(num: f64) {
@@ -23,19 +21,52 @@ pub fn compile_and_run(prog: Program) {
     let context = Context::create();
     let mut codegen = CodeGen::new(&context);
     codegen.compile(prog, &context);
-    // let root: JitFunction<BodyFunc> = ;
-    // let ptr = print_float_64 as *const fn(f64);
-    // let ptr_to_f64 = unsafe {
-    //     std::mem::transmute::<*const fn(f64), *const f64>(ptr)
-    // };
-    // unsafe {
-    //     println!("=> {}", root.call(*ptr_to_f64))
-    // }
 }
 
 const ROOT: &'static str = "main";
 
 type BodyFunc = unsafe extern "C" fn(f64) -> f64;
+
+struct Scope<'ctx> {
+    values: HashMap<String, FloatValue<'ctx>>,
+}
+
+struct Scopes<'ctx> {
+    scopes: Vec<Scope<'ctx>>,
+}
+
+impl<'ctx> Scopes<'ctx> {
+    pub fn new() -> Self {
+        let scope = Scope { values: HashMap::default() };
+        Scopes { scopes: vec![scope] }
+    }
+    pub fn insert(&mut self, name: String, value: FloatValue<'ctx>) {
+        self.scopes.last_mut().unwrap().values.insert(name, value);
+    }
+    pub fn get(&self, name: &str) -> Option<&FloatValue<'ctx>> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(val) = scope.values.get(name) {
+                return Some(val);
+            }
+        }
+        None
+    }
+    pub fn begin_scope(&mut self) {
+        self.scopes.push(Scope { values: HashMap::default() });
+    }
+    pub fn end_scope(&mut self) -> HashMap<String, FloatValue<'ctx>> {
+        let scope = self.scopes.pop().unwrap();
+        scope.values
+    }
+    pub fn lookup(&self, name: &str) -> Option<FloatValue<'ctx>> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(val) = scope.values.get(name) {
+                return Some(val.clone());
+            }
+        }
+        None
+    }
+}
 
 struct CodeGen<'ctx> {
     module: Module<'ctx>,
@@ -43,8 +74,8 @@ struct CodeGen<'ctx> {
     execution_engine: ExecutionEngine<'ctx>,
     counter: usize,
     value_type: StructType<'ctx>,
-    scope: Vec<HashMap<String, FloatValue<'ctx>>>,
-    print_func: FunctionValue<'ctx>
+    scopes: Scopes<'ctx>,
+    print_func: FunctionValue<'ctx>,
 }
 
 impl<'ctx> CodeGen<'ctx> {
@@ -63,7 +94,7 @@ impl<'ctx> CodeGen<'ctx> {
             execution_engine,
             counter: 0,
             value_type,
-            scope: vec![HashMap::new()],
+            scopes: Scopes::new(),
             print_func,
         };
         codegen
@@ -72,23 +103,7 @@ impl<'ctx> CodeGen<'ctx> {
         self.counter += 1;
         format!("tmp{}", self.counter)
     }
-
-    fn lookup(&self, name: &str) -> FloatValue<'ctx> {
-        for scope in self.scope.iter().rev() {
-            if let Some(value) = scope.get(name) {
-                return value.clone();
-            }
-        }
-        panic!("Unable to find value for {}", name);
-    }
-    fn begin_scope(&mut self) {
-        self.scope.push(HashMap::new())
-    }
-    fn end_scope(&mut self) {
-        self.scope.pop();
-    }
-
-    fn compile(&mut self, prog: Program, context: &'ctx Context)  {
+    fn compile(&mut self, prog: Program, context: &'ctx Context) {
         let f64_type = context.f64_type();
 
         let f64_func = f64_type.fn_type(&[], false);
@@ -112,7 +127,7 @@ impl<'ctx> CodeGen<'ctx> {
         // unsafe { self.execution_engine.get_function(ROOT).ok() }.expect("to get root func")
     }
 
-    fn compile_stmt(&mut self, stmt: Stmt, context: &'ctx Context) {
+    fn compile_stmt(&mut self, stmt: Stmt, context: &'ctx Context) -> BasicBlock<'ctx> {
         match stmt {
             Stmt::Expr(_) => panic!("cannot compile expression stmt"),
             Stmt::Print(expr) => {
@@ -122,7 +137,7 @@ impl<'ctx> CodeGen<'ctx> {
             Stmt::Assign(name, expr) => {
                 let fin = self.compile_expr(expr, context);
                 // todo: check if name is already in scope SSA!
-                self.scope.last_mut().unwrap().insert(name.clone(), fin);
+                self.scopes.insert(name.clone(), fin);
             }
             Stmt::Return(result) => {
                 let fin = match result {
@@ -132,11 +147,11 @@ impl<'ctx> CodeGen<'ctx> {
                 self.builder.build_return(Some(&fin));
             }
             Stmt::Group(body) => {
-                self.begin_scope();
+                self.scopes.begin_scope();
                 for stmt in body {
                     self.compile_stmt(stmt, context);
                 }
-                self.end_scope();
+                self.scopes.end_scope();
             }
             Stmt::If(test, true_blk, false_blk) => {
                 let false_blk = if let Some(fal) = false_blk { fal } else { panic!("must have false block") };
@@ -152,15 +167,40 @@ impl<'ctx> CodeGen<'ctx> {
                 self.builder.build_conditional_branch(comparison, then_bb, else_bb);
 
                 self.builder.position_at_end(then_bb);
-                self.compile_stmt(*true_blk, context);
+                self.scopes.begin_scope();
+                let then_bb_final = self.compile_stmt(*true_blk, context);
+                let then_scope = self.scopes.end_scope();
                 self.builder.build_unconditional_branch(continue_bb);
 
+
                 self.builder.position_at_end(else_bb);
-                self.compile_stmt(*false_blk, context);
+                self.scopes.begin_scope();
+                let else_bb_final = self.compile_stmt(*false_blk, context);
                 self.builder.build_unconditional_branch(continue_bb);
+                let else_scope = self.scopes.end_scope();
+
                 self.builder.position_at_end(continue_bb);
+
+                let mut handled = HashSet::new();
+                println!("fniishing");
+                for (assigned_var, definition) in then_scope.clone().iter().chain(else_scope.clone().iter()) {
+                    if handled.contains(assigned_var) { continue }
+                    if let Some(existing_defn) = self.scopes.lookup(&assigned_var) {
+                        println!("{}", assigned_var);
+                        handled.insert(assigned_var.clone());
+                        let value_from_if = then_scope.get(assigned_var).or(Some(&existing_defn)).unwrap();
+                        let value_from_else = else_scope.get(assigned_var).or(Some(&existing_defn)).unwrap();
+                        let phi = self.builder.build_phi(context.f64_type(), &format!("if_else_phi_{}", assigned_var));
+                        let value_from_if = value_from_if.as_basic_value_enum().into_float_value();
+                        let value_from_else = value_from_else.as_basic_value_enum().into_float_value();
+                        phi.add_incoming(&[(&value_from_if, then_bb_final), (&value_from_else, else_bb_final)]);
+                        self.scopes.insert(assigned_var.clone(), phi.as_any_value_enum().into_float_value());
+                    }
+                }
+                return continue_bb;
             }
         }
+        self.builder.get_insert_block().unwrap()
     }
 
     fn compile_expr(&mut self, expr: Expr, context: &'ctx Context) -> FloatValue<'ctx> {
@@ -179,7 +219,7 @@ impl<'ctx> CodeGen<'ctx> {
                     _ => panic!("only arithmetic")
                 }
             }
-            Expr::Variable(name) => self.lookup(&name),
+            Expr::Variable(name) => self.scopes.lookup(&name).unwrap(),
             Expr::LogicalOp(_, _, _) => { panic!("logic not done yet") }
         }
     }

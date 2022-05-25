@@ -66,6 +66,8 @@ pub enum Token {
     Print,
     Ret,
     If,
+    Begin,
+    End,
     Else,
 }
 
@@ -99,6 +101,8 @@ pub enum TokenType {
     Eq,
     Ret,
     If,
+    Begin,
+    End,
     Else,
 }
 
@@ -143,6 +147,8 @@ impl Token {
             Token::Ret => TokenType::Ret,
             Token::If => TokenType::If,
             Token::Else => TokenType::Else,
+            Token::End => TokenType::End,
+            Token::Begin => TokenType::End,
         }
     }
 }
@@ -179,6 +185,8 @@ impl TokenType {
             TokenType::Ret => "Ret",
             TokenType::If => "If",
             TokenType::Else => "Else",
+            TokenType::Begin => "Begin",
+            TokenType::End => "End",
         }
     }
 }

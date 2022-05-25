@@ -14,7 +14,7 @@ fn main() {
     let path = if let Some(path) = args.get(1) {
         path
     } else {
-        println!("Usage: ./crawk something.awk input.txt");
+        println!("Usage: ./crawk something.awk input.txt`");
         exit(-1);
     };
 

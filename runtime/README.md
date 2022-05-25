@@ -1,0 +1,1 @@
+Produces a dynamically linkable file with rust functions I want to call from llvm generated in the parent package.

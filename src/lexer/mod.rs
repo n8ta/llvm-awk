@@ -87,7 +87,8 @@ impl<'a> Lexer<'a> {
     }
     fn identifier(&mut self) -> Result<(), String> {
         while self.peek().is_alphanumeric() { self.advance(); }
-        let src = self.src.chars().skip(self.start).take(self.current - self.start).collect();
+        let src: String = self.src.chars().skip(self.start).take(self.current - self.start).collect();
+        let src = src.to_ascii_lowercase();
         if src == "true" {
             self.add_token(Token::True);
         } else if src == "false" {
@@ -98,6 +99,10 @@ impl<'a> Lexer<'a> {
             self.add_token(Token::If);
         } else if src == "else" {
             self.add_token(Token::Else);
+        } else if src == "begin" {
+            self.add_token(Token::Begin);
+        } else if src == "end" {
+            self.add_token(Token::End);
         } else if src == "print" {
             self.add_token(Token::Print);
         } else {
@@ -303,4 +308,9 @@ fn test_if_else() {
 fn test_if_only() {
     let str = "if (1) { 2 }";
     assert_eq!(lex(str).unwrap(), vec![Token::If, Token::LeftParen, Token::Number(1.0), Token::RightParen, Token::LeftBrace, Token::Number(2.0), Token::RightBrace, Token::EOF]);
+}
+#[test]
+fn begin_end() {
+    let str = "BEGIN begin END end";
+    assert_eq!(lex(str).unwrap(), vec![Token::Begin, Token::Begin,Token::End,Token::End,Token::EOF]);
 }
