@@ -106,7 +106,7 @@ impl<'a> Lexer<'a> {
         } else if src == "print" {
             self.add_token(Token::Print);
         } else {
-            self.add_token(Token::String(src));
+            self.add_token(Token::Ident(src));
         }
 
         // }
@@ -290,12 +290,12 @@ fn test_lex_logical_op() {
 #[test]
 fn test_lex_assignment() {
     let str = "abc = 4";
-    assert_eq!(lex(str).unwrap(), vec![Token::String("abc".to_string()), Token::Eq, Token::Number(4.0), Token::EOF]);
+    assert_eq!(lex(str).unwrap(), vec![Token::Ident("abc".to_string()), Token::Eq, Token::Number(4.0), Token::EOF]);
 }
 #[test]
 fn test_ret() {
     let str = "return 1 return abc";
-    assert_eq!(lex(str).unwrap(), vec![Token::Ret, Token::Number(1.0), Token::Ret, Token::String(format!("abc")), Token::EOF]);
+    assert_eq!(lex(str).unwrap(), vec![Token::Ret, Token::Number(1.0), Token::Ret, Token::Ident(format!("abc")), Token::EOF]);
 }
 
 #[test]
@@ -310,7 +310,12 @@ fn test_if_only() {
     assert_eq!(lex(str).unwrap(), vec![Token::If, Token::LeftParen, Token::Number(1.0), Token::RightParen, Token::LeftBrace, Token::Number(2.0), Token::RightBrace, Token::EOF]);
 }
 #[test]
-fn begin_end() {
+fn test_begin_end() {
     let str = "BEGIN begin END end";
     assert_eq!(lex(str).unwrap(), vec![Token::Begin, Token::Begin,Token::End,Token::End,Token::EOF]);
+}
+#[test]
+fn test_ident() {
+    let str = "{ x }";
+    assert_eq!(lex(str).unwrap(), vec![Token::LeftBrace, Token::Ident("x".to_string()), Token::RightBrace, Token::EOF]);
 }

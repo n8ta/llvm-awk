@@ -38,10 +38,11 @@ impl Parser {
 
     fn consume(&mut self, typ: TokenType, message: &str) -> Token {
         if self.check(typ.clone()) { return self.advance(); }
-        panic!("{} - didn't find a {} as expected. Found a {}",
+        panic!("{} - didn't find a {} as expected. Found a {} {:?}",
                message,
                TokenType::name(typ),
-               TokenType::name(self.peek().ttype()));
+               TokenType::name(self.peek().ttype()),
+                self.peek());
     }
 
     fn matches(&mut self, tokens: Vec<TokenType>) -> bool {
@@ -88,13 +89,13 @@ impl Parser {
         let b = if self.matches(vec![TokenType::LeftBrace]) {
             Block::new_always(self.stmts())
         } else if self.matches(vec![TokenType::Begin]) {
-            self.consume(TokenType::LeftBrace, "Expected a '}' after a begin");
+            self.consume(TokenType::LeftBrace, "Expected a '{' after a begin");
             Block::new_begin(self.stmts())
         } else if self.matches(vec![TokenType::End]) {
-            self.consume(TokenType::LeftBrace, "Expected a '}' after a end");
+            self.consume(TokenType::LeftBrace, "Expected a {' after a end");
             Block::new_end(self.stmts())
         } else {
-            self.consume(TokenType::LeftBrace, "Expected a '}' after a test");
+            self.consume(TokenType::LeftBrace, "Expected a '{' after a test");
             Block::new_expr(self.expression(), self.stmts())
         };
         self.consume(TokenType::RightBrace, "Block ends with }");
@@ -115,7 +116,7 @@ impl Parser {
                 self.consume(TokenType::Semicolon, "Expected ; after print");
                 s
             } else if self.peek_next().ttype() == TokenType::Eq {
-                let str = if let Token::String(str) = self.consume(TokenType::String, "Expected identifier before '='") { str } else { panic!("Expected identifier before '='") };
+                let str = if let Token::Ident(str) = self.consume(TokenType::Ident, "Expected identifier before '='") { str } else { panic!("Expected identifier before '='") };
                 self.consume(TokenType::Eq, "Expected '=' after identifier");
                 let s = Stmt::Assign(str, self.expression());
                 self.consume(TokenType::Semicolon, "Expected ';' after '='");

@@ -1,5 +1,4 @@
 {
-
  x = 1;
  if (x) {
      if (x) {
@@ -14,7 +13,7 @@
         x = 4;
      }
  }
- print x + 0.00;
+ print x + 0.001;
  return;
 
 }

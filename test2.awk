@@ -1,1 +1,4 @@
-BEGIN { print 0; } BEGIN { print 1;} { print 2;} { return 1; }
+END { if(x) { x = 4; } else { x = 100; } }
+BEGIN { x = 1; } { x = 3; }
+x { print x; }
+END { print x; }

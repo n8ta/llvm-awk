@@ -55,6 +55,7 @@ pub enum Token {
     LogicalOp(LogicalOp),
     Bang,
     String(String),
+    Ident(String),
     Number(f64),
     False,
     True,
@@ -82,6 +83,7 @@ pub enum TokenType {
     EqEq,
     Greater,
     GreaterEq,
+    Ident,
     Less,
     LessEq,
     String,
@@ -149,6 +151,7 @@ impl Token {
             Token::Else => TokenType::Else,
             Token::End => TokenType::End,
             Token::Begin => TokenType::Begin,
+            Token::Ident(_) => TokenType::Ident,
         }
     }
 }
@@ -187,6 +190,7 @@ impl TokenType {
             TokenType::Else => "Else",
             TokenType::Begin => "Begin",
             TokenType::End => "End",
+            TokenType::Ident => "Ident",
         }
     }
 }

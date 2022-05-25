@@ -37,6 +37,7 @@ impl Block {
 pub enum Expr {
     Number(f64),
     String(String),
+    Ident(String),
     BinOp(Box<Expr>, BinOp, Box<Expr>),
     LogicalOp(Box<Expr>, LogicalOp, Box<Expr>),
     Variable(String),
@@ -47,6 +48,7 @@ impl Display for Expr {
         match self {
             Expr::Variable(n) => write!(f, "var {}", n),
             Expr::String(str) => write!(f, "\"{}\"", str),
+            Expr::Ident(str) => write!(f, "{}", str),
             Expr::Number(n) => write!(f, "{}", n),
             Expr::BinOp(left, op, right) => write!(f, "{}{}{}", left, op, right),
             Expr::LogicalOp(left, op, right) => write!(f, "{}{}{}", left, op, right),
