@@ -244,9 +244,13 @@ impl Parser {
             panic!("Primary and at end")
         }
         match self.tokens.get(self.current).unwrap().clone() {
-            Token::Number(num) => {
+            Token::NumberF64(num) => {
                 self.advance();
-                Expr::Number(num)
+                Expr::NumberF64(num)
+            }
+            Token::NumberI64(num) => {
+                self.advance();
+                Expr::NumberI64(num)
             }
             Token::LeftParen => {
                 self.consume(TokenType::LeftParen, "Expected to parse a left paren here");
@@ -269,7 +273,7 @@ fn test_ast_number() {
 
     assert_eq!(parse(lex("{1 + 2;}").unwrap()),
                Program::new(vec![], vec![], vec![
-                   PatternAction::new_action_only(Stmt::Expr(Expr::BinOp(Box::new(Expr::Number(1.0)), BinOp::Plus, Box::new(Expr::Number(2.0)))))
+                   PatternAction::new_action_only(Stmt::Expr(Expr::BinOp(Box::new(Expr::NumberI64(1)), BinOp::Plus, Box::new(Expr::NumberI64(2)))))
                ]));
 }
 
@@ -277,8 +281,8 @@ fn test_ast_number() {
 #[test]
 fn test_ast_oop() {
     use crate::lexer::lex;
-    let left = Box::new(Expr::Number(1.0));
-    let right = Box::new(Expr::BinOp(Box::new(Expr::Number(3.0)), BinOp::Star, Box::new(Expr::Number(2.0))));
+    let left = Box::new(Expr::NumberI64(1));
+    let right = Box::new(Expr::BinOp(Box::new(Expr::NumberI64(3)), BinOp::Star, Box::new(Expr::NumberI64(2))));
     let mult = Stmt::Expr(Expr::BinOp(left, BinOp::Plus, right));
     assert_eq!(parse(lex("{1 + 3 * 2;}").unwrap()), Program::new_action_only(mult));
 }
@@ -286,8 +290,8 @@ fn test_ast_oop() {
 #[test]
 fn test_ast_oop_2() {
     use crate::lexer::lex;
-    let left = Box::new(Expr::Number(2.0));
-    let right = Box::new(Expr::BinOp(Box::new(Expr::Number(1.0)), BinOp::Star, Box::new(Expr::Number(3.0))));
+    let left = Box::new(Expr::NumberI64(2));
+    let right = Box::new(Expr::BinOp(Box::new(Expr::NumberI64(1)), BinOp::Star, Box::new(Expr::NumberI64(3))));
     let mult = Stmt::Expr(Expr::BinOp(right, BinOp::Plus, left));
     assert_eq!(parse(lex("{1 * 3 + 2;}").unwrap()), Program::new_action_only(mult));
 }
@@ -296,14 +300,14 @@ fn test_ast_oop_2() {
 #[test]
 fn test_ast_assign() {
     use crate::lexer::lex;
-    let stmt = Stmt::Assign(format!("abc"), Expr::Number(2.0));
+    let stmt = Stmt::Assign(format!("abc"), Expr::NumberF64(2.0));
     assert_eq!(parse(lex("{abc = 2.0; }").unwrap()), Program::new_action_only(stmt));
 }
 
 #[test]
 fn test_ret() {
     use crate::lexer::lex;
-    let stmt = Stmt::Return(Some(Expr::Number(2.0)));
+    let stmt = Stmt::Return(Some(Expr::NumberI64(2)));
     assert_eq!(parse(lex("{return 2; }").unwrap()), Program::new_action_only(stmt));
 }
 
@@ -319,28 +323,28 @@ fn test_if_else() {
     use crate::lexer::lex;
     let str = "{ if (1) { return 2; } else { return 3; }}";
     let actual = parse(lex(str).unwrap());
-    assert_eq!(actual, Program::new_action_only(Stmt::If(Expr::Number(1.0), Box::new(Stmt::Return(Some(Expr::Number(2.0)))), Some(Box::new(Stmt::Return(Some(Expr::Number(3.0))))))));
+    assert_eq!(actual, Program::new_action_only(Stmt::If(Expr::NumberI64(1), Box::new(Stmt::Return(Some(Expr::NumberI64(2)))), Some(Box::new(Stmt::Return(Some(Expr::NumberI64(3))))))));
 }
 
 #[test]
 fn test_if_only() {
     use crate::lexer::lex;
     let str = "{if (1) { return 2; }}";
-    assert_eq!(parse(lex(str).unwrap()), Program::new_action_only(Stmt::If(Expr::Number(1.0), Box::new(Stmt::Return(Some(Expr::Number(2.0)))), None)));
+    assert_eq!(parse(lex(str).unwrap()), Program::new_action_only(Stmt::If(Expr::NumberI64(1), Box::new(Stmt::Return(Some(Expr::NumberI64(2)))), None)));
 }
 
 #[test]
 fn test_print() {
     use crate::lexer::lex;
     let str = "{print 1;}";
-    assert_eq!(parse(lex(str).unwrap()), Program::new_action_only(Stmt::Print(Expr::Number(1.0))));
+    assert_eq!(parse(lex(str).unwrap()), Program::new_action_only(Stmt::Print(Expr::NumberI64(1))));
 }
 
 #[test]
 fn test_group() {
     use crate::lexer::lex;
     let str = "{{print 1;print 2;}}";
-    assert_eq!(parse(lex(str).unwrap()), Program::new_action_only(Stmt::Group(vec![Stmt::Print(Expr::Number(1.0)), Stmt::Print(Expr::Number(2.0))])));
+    assert_eq!(parse(lex(str).unwrap()), Program::new_action_only(Stmt::Group(vec![Stmt::Print(Expr::NumberI64(1)), Stmt::Print(Expr::NumberI64(2))])));
 }
 
 
@@ -352,10 +356,10 @@ fn test_if_else_continues() {
     assert_eq!(actual, Program::new_action_only(
         Stmt::Group(vec![
             Stmt::If(
-                Expr::Number(1.0),
-                Box::new(Stmt::Return(Some(Expr::Number(2.0)))),
-                Some(Box::new(Stmt::Return(Some(Expr::Number(3.0)))))),
-            Stmt::Expr(Expr::Number(4.0))])));
+                Expr::NumberI64(1),
+                Box::new(Stmt::Return(Some(Expr::NumberI64(2)))),
+                Some(Box::new(Stmt::Return(Some(Expr::NumberI64(3)))))),
+            Stmt::Expr(Expr::NumberF64(4.0))])));
 }
 
 #[test]
@@ -363,9 +367,9 @@ fn test_begin_end() {
     use crate::lexer::lex;
     let str = "a { print 5; } BEGIN { print 1; } begin { print 2; } END { print 3; } end { print 4; }";
     let actual = parse(lex(str).unwrap());
-    let begins = vec![Stmt::Print(Expr::Number(1.0)), Stmt::Print(Expr::Number(2.0))];
-    let ends = vec![Stmt::Print(Expr::Number(3.0)), Stmt::Print(Expr::Number(4.0))];
-    let generic = PatternAction::new(Some(Expr::Variable("a".to_string())), Stmt::Print(Expr::Number(5.0)));
+    let begins = vec![Stmt::Print(Expr::NumberI64(1)), Stmt::Print(Expr::NumberI64(2))];
+    let ends = vec![Stmt::Print(Expr::NumberI64(3)), Stmt::Print(Expr::NumberI64(4))];
+    let generic = PatternAction::new(Some(Expr::Variable("a".to_string())), Stmt::Print(Expr::NumberI64(5)));
     assert_eq!(actual, Program::new(begins, ends, vec![generic]));
 }
 
@@ -390,8 +394,8 @@ fn test_column() {
     let str = "$0+2 { print a; }";
     let actual = parse(lex(str).unwrap());
     let body = Stmt::Print(Expr::Variable("a".to_string()));
-    let two = Box::new(Expr::Number(2.0));
-    let zero = Box::new(Expr::Number(0.0));
+    let two = Box::new(Expr::NumberI64(2));
+    let zero = Box::new(Expr::NumberI64(0));
     let pattern = Expr::Column(Box::new(Expr::BinOp(zero, BinOp::Plus, two)));
     let pa = PatternAction::new(Some(pattern), body);
     assert_eq!(actual, Program::new(vec![], vec![], vec![pa]));

@@ -21,14 +21,15 @@ impl PatternAction {
     pub fn new(pattern: Option<Expr>, action: Stmt) -> Self {
         Self { pattern, action }
     }
-    pub fn new_pattern_only(test: Expr) -> PatternAction { PatternAction::new(Some(test), Stmt::Print(Expr::Column(Box::new(Expr::Number(0.0))))) }
+    pub fn new_pattern_only(test: Expr) -> PatternAction { PatternAction::new(Some(test), Stmt::Print(Expr::Column(Box::new(Expr::NumberF64(0.0))))) }
     pub fn new_action_only(body: Stmt) -> PatternAction { PatternAction::new(None, body) }
 }
 
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
-    Number(f64),
+    NumberF64(f64),
+    NumberI64(i64),
     String(String),
     BinOp(Box<Expr>, BinOp, Box<Expr>),
     LogicalOp(Box<Expr>, LogicalOp, Box<Expr>),
@@ -41,7 +42,8 @@ impl Display for Expr {
         match self {
             Expr::Variable(n) => write!(f, "var {}", n),
             Expr::String(str) => write!(f, "\"{}\"", str),
-            Expr::Number(n) => write!(f, "{}", n),
+            Expr::NumberF64(n) => write!(f, "{}", n),
+            Expr::NumberI64(n) => write!(f, "{}", n),
             Expr::BinOp(left, op, right) => write!(f, "{}{}{}", left, op, right),
             Expr::LogicalOp(left, op, right) => write!(f, "{}{}{}", left, op, right),
             Expr::Column(col) => write!(f, "{}", col),
