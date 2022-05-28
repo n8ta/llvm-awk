@@ -125,7 +125,6 @@ impl Parser {
             } else {
                 // test
                 // ^ implicitly prints line if test passes
-                println!("doesn't match");
                 PAType::Normal(PatternAction::new_pattern_only(test))
             }
         };
@@ -198,7 +197,7 @@ impl Parser {
     }
     fn expression(&mut self) -> Expr {
         if self.matches(vec![TokenType::Column]) {
-
+            return Expr::Column(Box::new(self.expression()));
         }
         self.equality()
     }
@@ -378,9 +377,22 @@ fn test_begin_end2() {
 }
 
 #[test]
-fn test_column() {
+fn test_pattern_only() {
     use crate::lexer::lex;
     let str = "test";
     let actual = parse(lex(str).unwrap());
     assert_eq!(actual, Program::new(vec![], vec![], vec![PatternAction::new_pattern_only(Expr::Variable("test".to_string()))]));
+}
+
+#[test]
+fn test_column() {
+    use crate::lexer::lex;
+    let str = "$0+2 { print a; }";
+    let actual = parse(lex(str).unwrap());
+    let body = Stmt::Print(Expr::Variable("a".to_string()));
+    let two = Box::new(Expr::Number(2.0));
+    let zero = Box::new(Expr::Number(0.0));
+    let pattern = Expr::Column(Box::new(Expr::BinOp(zero, BinOp::Plus, two)));
+    let pa = PatternAction::new(Some(pattern), body);
+    assert_eq!(actual, Program::new(vec![], vec![], vec![pa]));
 }
