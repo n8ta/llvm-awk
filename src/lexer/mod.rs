@@ -1,6 +1,7 @@
 mod types;
 
 pub use types::{Token, TokenType, BinOp, LogicalOp};
+use crate::Expr;
 
 pub fn lex(str: &str) -> LexerResult {
     let mut lexer = Lexer::new(str);
@@ -128,10 +129,7 @@ impl<'a> Lexer<'a> {
     fn scan_token(&mut self) -> Result<(), String> {
         let c = self.advance();
         match c {
-            '$' => {
-                let num = self.number_usize(1)?;
-                self.add_token(Token::Column(num));
-            }
+            '$' => self.add_token(Token::Column),
             // '(' => self.add_token(Token::LeftParen),
             // ')' => self.add_token(Token::RightParen),
             // '{' => self.add_token(Token::LeftBrace),
@@ -251,7 +249,7 @@ fn test_braces() {
 fn test_column_simple() {
     let str = "$1";
     let tokens = lex(str).unwrap();
-    assert_eq!(tokens, vec![Token::Column(1), Token::EOF]);
+    assert_eq!(tokens, vec![Token::Column, Token::Number(1.0), Token::EOF]);
 }
 
 
@@ -259,7 +257,7 @@ fn test_column_simple() {
 fn test_columns() {
     let str = "$1 + $2000 $0";
     let tokens = lex(str).unwrap();
-    assert_eq!(tokens, vec![Token::Column(1), Token::BinOp(BinOp::Plus), Token::Column(2000), Token::Column(0), Token::EOF]);
+    assert_eq!(tokens, vec![Token::Column, Token::Number(1.0), Token::BinOp(BinOp::Plus), Token::Column, Token::Number(2000.0), Token::Column, Token::Number(0.0), Token::EOF]);
 }
 
 #[test]

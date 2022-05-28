@@ -50,7 +50,7 @@ impl Display for LogicalOp {
 pub enum Token {
     Eq,
     Semicolon,
-    Column(usize),
+    Column,
     BinOp(BinOp),
     LogicalOp(LogicalOp),
     Bang,
@@ -138,7 +138,7 @@ impl Token {
             Token::False => TokenType::False,
             Token::True => TokenType::True,
             Token::EOF => TokenType::EOF,
-            Token::Column(_) => TokenType::Column,
+            Token::Column => TokenType::Column,
             Token::LeftBrace => TokenType::LeftBrace,
             Token::RightBrace => TokenType::RightBrace,
             Token::LeftParen => TokenType::LeftParen,

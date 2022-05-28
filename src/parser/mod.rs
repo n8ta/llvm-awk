@@ -1,9 +1,15 @@
 mod types;
 
 pub use types::{Stmt, Expr, Program};
-pub use crate::parser::types::{Block, Test};
+pub use crate::parser::types::{PatternAction};
 use crate::lexer::{BinOp, Token, TokenType};
 
+
+enum PAType {
+    Normal(PatternAction),
+    Begin(Stmt),
+    End(Stmt),
+}
 
 pub fn parse(tokens: Vec<Token>) -> Program {
     let mut parser = Parser { tokens, current: 0 };
@@ -21,11 +27,17 @@ impl Parser {
     }
 
     fn parse(&mut self) -> Program {
-        let mut blocks: Vec<Block> = vec![];
+        let mut begin = vec![];
+        let mut end = vec![];
+        let mut generic = vec![];
         while !self.is_at_end() {
-            blocks.push(self.block())
+            match self.pattern_action() {
+                PAType::Normal(pa) => generic.push(pa),
+                PAType::Begin(pa) => begin.push(pa),
+                PAType::End(pa) => end.push(pa),
+            }
         }
-        Program::new(blocks)
+        Program::new(begin, end, generic)
     }
 
     fn check(&mut self, typ: TokenType) -> bool {
@@ -42,7 +54,7 @@ impl Parser {
                message,
                TokenType::name(typ),
                TokenType::name(self.peek().ttype()),
-                self.peek());
+               self.peek());
     }
 
     fn matches(&mut self, tokens: Vec<TokenType>) -> bool {
@@ -85,20 +97,38 @@ impl Parser {
         self.previous().unwrap()
     }
 
-    fn block(&mut self) -> Block {
+    fn pattern_action(&mut self) -> PAType {
         let b = if self.matches(vec![TokenType::LeftBrace]) {
-            Block::new_always(self.stmts())
+            // { print 1; }
+            let pa = PAType::Normal(PatternAction::new_action_only(self.stmts()));
+            self.consume(TokenType::RightBrace, "Expected '}' after action block");
+            pa
         } else if self.matches(vec![TokenType::Begin]) {
+            // BEGIN { print 1; }
             self.consume(TokenType::LeftBrace, "Expected a '{' after a begin");
-            Block::new_begin(self.stmts())
+            let pa = PAType::Begin(self.stmts());
+            self.consume(TokenType::RightBrace, "Begin action should end with '}'");
+            pa
         } else if self.matches(vec![TokenType::End]) {
+            // END { print 1; }
             self.consume(TokenType::LeftBrace, "Expected a {' after a end");
-            Block::new_end(self.stmts())
+            let pa = PAType::End(self.stmts());
+            self.consume(TokenType::RightBrace, "End action should end with '}'");
+            pa
         } else {
-            self.consume(TokenType::LeftBrace, "Expected a '{' after a test");
-            Block::new_expr(self.expression(), self.stmts())
+            let test = self.expression();
+            if self.matches(vec![TokenType::LeftBrace]) {
+                // test { print 1; }
+                let pa = PAType::Normal(PatternAction::new(Some(test), self.stmts()));
+                self.consume(TokenType::RightBrace, "Patern action should end with '}'");
+                pa
+            } else {
+                // test
+                // ^ implicitly prints line if test passes
+                println!("doesn't match");
+                PAType::Normal(PatternAction::new_pattern_only(test))
+            }
         };
-        self.consume(TokenType::RightBrace, "Block ends with }");
         b
     }
     fn group(&mut self) -> Stmt {
@@ -167,6 +197,9 @@ impl Parser {
         Stmt::If(predicate, Box::new(then_blk), else_blk)
     }
     fn expression(&mut self) -> Expr {
+        if self.matches(vec![TokenType::Column]) {
+
+        }
         self.equality()
     }
     fn equality(&mut self) -> Expr {
@@ -222,8 +255,8 @@ impl Parser {
                 self.consume(TokenType::RightParen, "Missing closing ')' after group");
                 expr
             }
-            Token::String(name) => {
-                self.consume(TokenType::String, "Expected to parse a string here");
+            Token::Ident(name) => {
+                self.consume(TokenType::Ident, "Expected to parse a string here");
                 Expr::Variable(name)
             }
             t => panic!("Unexpected token {:?} {}", t, TokenType::name(t.ttype()))
@@ -236,8 +269,8 @@ fn test_ast_number() {
     use crate::lexer::lex;
 
     assert_eq!(parse(lex("{1 + 2;}").unwrap()),
-               Program::new(vec![
-                   Block::new_always(                              Stmt::Expr(Expr::BinOp(Box::new(Expr::Number(1.0)), BinOp::Plus, Box::new(Expr::Number(2.0)))))
+               Program::new(vec![], vec![], vec![
+                   PatternAction::new_action_only(Stmt::Expr(Expr::BinOp(Box::new(Expr::Number(1.0)), BinOp::Plus, Box::new(Expr::Number(2.0)))))
                ]));
 }
 
@@ -248,7 +281,7 @@ fn test_ast_oop() {
     let left = Box::new(Expr::Number(1.0));
     let right = Box::new(Expr::BinOp(Box::new(Expr::Number(3.0)), BinOp::Star, Box::new(Expr::Number(2.0))));
     let mult = Stmt::Expr(Expr::BinOp(left, BinOp::Plus, right));
-    assert_eq!(parse(lex("{1 + 3 * 2;}").unwrap()), Program::new(vec![Block::new_always(mult)]));
+    assert_eq!(parse(lex("{1 + 3 * 2;}").unwrap()), Program::new_action_only(mult));
 }
 
 #[test]
@@ -257,7 +290,7 @@ fn test_ast_oop_2() {
     let left = Box::new(Expr::Number(2.0));
     let right = Box::new(Expr::BinOp(Box::new(Expr::Number(1.0)), BinOp::Star, Box::new(Expr::Number(3.0))));
     let mult = Stmt::Expr(Expr::BinOp(right, BinOp::Plus, left));
-    assert_eq!(parse(lex("{1 * 3 + 2;}").unwrap()), Program::new(vec![Block::new_always(mult)]));
+    assert_eq!(parse(lex("{1 * 3 + 2;}").unwrap()), Program::new_action_only(mult));
 }
 
 
@@ -265,21 +298,21 @@ fn test_ast_oop_2() {
 fn test_ast_assign() {
     use crate::lexer::lex;
     let stmt = Stmt::Assign(format!("abc"), Expr::Number(2.0));
-    assert_eq!(parse(lex("{abc = 2.0; }").unwrap()), Program::new(vec![Block::new_always(stmt)]));
+    assert_eq!(parse(lex("{abc = 2.0; }").unwrap()), Program::new_action_only(stmt));
 }
 
 #[test]
 fn test_ret() {
     use crate::lexer::lex;
     let stmt = Stmt::Return(Some(Expr::Number(2.0)));
-    assert_eq!(parse(lex("{return 2; }").unwrap()), Program::new(vec![Block::new_always(stmt)]));
+    assert_eq!(parse(lex("{return 2; }").unwrap()), Program::new_action_only(stmt));
 }
 
 #[test]
 fn test_ret_nil() {
     use crate::lexer::lex;
     let stmt = Stmt::Return(None);
-    assert_eq!(parse(lex("{return;}").unwrap()), Program::new(vec![Block::new_always(stmt)]));
+    assert_eq!(parse(lex("{return;}").unwrap()), Program::new_action_only(stmt));
 }
 
 #[test]
@@ -287,28 +320,28 @@ fn test_if_else() {
     use crate::lexer::lex;
     let str = "{ if (1) { return 2; } else { return 3; }}";
     let actual = parse(lex(str).unwrap());
-    assert_eq!(actual, Program::new(vec![Block::new_always(Stmt::If(Expr::Number(1.0), Box::new(Stmt::Return(Some(Expr::Number(2.0)))), Some(Box::new(Stmt::Return(Some(Expr::Number(3.0)))))))]));
+    assert_eq!(actual, Program::new_action_only(Stmt::If(Expr::Number(1.0), Box::new(Stmt::Return(Some(Expr::Number(2.0)))), Some(Box::new(Stmt::Return(Some(Expr::Number(3.0))))))));
 }
 
 #[test]
 fn test_if_only() {
     use crate::lexer::lex;
     let str = "{if (1) { return 2; }}";
-    assert_eq!(parse(lex(str).unwrap()), Program::new(vec![Block::new_always(Stmt::If(Expr::Number(1.0), Box::new(Stmt::Return(Some(Expr::Number(2.0)))), None))]));
+    assert_eq!(parse(lex(str).unwrap()), Program::new_action_only(Stmt::If(Expr::Number(1.0), Box::new(Stmt::Return(Some(Expr::Number(2.0)))), None)));
 }
 
 #[test]
 fn test_print() {
     use crate::lexer::lex;
     let str = "{print 1;}";
-    assert_eq!(parse(lex(str).unwrap()), Program::new(vec![Block::new_always(Stmt::Print(Expr::Number(1.0)))]));
+    assert_eq!(parse(lex(str).unwrap()), Program::new_action_only(Stmt::Print(Expr::Number(1.0))));
 }
 
 #[test]
 fn test_group() {
     use crate::lexer::lex;
     let str = "{{print 1;print 2;}}";
-    assert_eq!(parse(lex(str).unwrap()), Program::new(vec![Block::new_always(Stmt::Group(vec![Stmt::Print(Expr::Number(1.0)), Stmt::Print(Expr::Number(2.0))]))]));
+    assert_eq!(parse(lex(str).unwrap()), Program::new_action_only(Stmt::Group(vec![Stmt::Print(Expr::Number(1.0)), Stmt::Print(Expr::Number(2.0))])));
 }
 
 
@@ -317,23 +350,37 @@ fn test_if_else_continues() {
     use crate::lexer::lex;
     let str = "{if (1) { return 2; } else { return 3; } 4.0;}";
     let actual = parse(lex(str).unwrap());
-    assert_eq!(actual, Program::new(vec![Block::new_always(
-                                                    Stmt::Group(vec![
-                                                        Stmt::If(
-                                                            Expr::Number(1.0),
-                                                            Box::new(Stmt::Return(Some(Expr::Number(2.0)))),
-                                                            Some(Box::new(Stmt::Return(Some(Expr::Number(3.0)))))),
-                                                        Stmt::Expr(Expr::Number(4.0))]))]));
+    assert_eq!(actual, Program::new_action_only(
+        Stmt::Group(vec![
+            Stmt::If(
+                Expr::Number(1.0),
+                Box::new(Stmt::Return(Some(Expr::Number(2.0)))),
+                Some(Box::new(Stmt::Return(Some(Expr::Number(3.0)))))),
+            Stmt::Expr(Expr::Number(4.0))])));
 }
 
 #[test]
-fn begin_end() {
+fn test_begin_end() {
     use crate::lexer::lex;
-    let str = "BEGIN { print 1; } begin { print 2; } END { print 3; } end { print 4; }";
+    let str = "a { print 5; } BEGIN { print 1; } begin { print 2; } END { print 3; } end { print 4; }";
     let actual = parse(lex(str).unwrap());
-    let b1 = Block::new_begin(Stmt::Print(Expr::Number(1.0)));
-    let b2 = Block::new_begin(Stmt::Print(Expr::Number(2.0)));
-    let e1 = Block::new_end(Stmt::Print(Expr::Number(3.0)));
-    let e2 = Block::new_end(Stmt::Print(Expr::Number(4.0)));
-    assert_eq!(actual, Program::new(vec![b1,b2,e1,e2]));
+    let begins = vec![Stmt::Print(Expr::Number(1.0)), Stmt::Print(Expr::Number(2.0))];
+    let ends = vec![Stmt::Print(Expr::Number(3.0)), Stmt::Print(Expr::Number(4.0))];
+    let generic = PatternAction::new(Some(Expr::Variable("a".to_string())), Stmt::Print(Expr::Number(5.0)));
+    assert_eq!(actual, Program::new(begins, ends, vec![generic]));
+}
+
+#[test]
+fn test_begin_end2() {
+    use crate::lexer::lex;
+    let str = "a { print 5; }";
+    let actual = parse(lex(str).unwrap());
+}
+
+#[test]
+fn test_column() {
+    use crate::lexer::lex;
+    let str = "test";
+    let actual = parse(lex(str).unwrap());
+    assert_eq!(actual, Program::new(vec![], vec![], vec![PatternAction::new_pattern_only(Expr::Variable("test".to_string()))]));
 }

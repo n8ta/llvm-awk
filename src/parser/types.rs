@@ -13,34 +13,27 @@ pub enum Stmt {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Block {
-    pub test: Test,
-    pub body: Stmt,
+pub struct PatternAction {
+    pub pattern: Option<Expr>,
+    pub action: Stmt
+}
+impl PatternAction {
+    pub fn new(pattern: Option<Expr>, action: Stmt) -> Self {
+        Self { pattern, action }
+    }
+    pub fn new_pattern_only(test: Expr) -> PatternAction { PatternAction::new(Some(test), Stmt::Print(Expr::Column(Box::new(Expr::Number(0.0))))) }
+    pub fn new_action_only(body: Stmt) -> PatternAction { PatternAction::new(None, body) }
 }
 
-#[derive(Debug, PartialEq)]
-pub enum Test {
-    Expr(Expr),
-    Begin,
-    End,
-    Always,
-}
-
-impl Block {
-    pub fn new_begin(body: Stmt) -> Block { Block { test: Test::Begin, body } }
-    pub fn new_end(body: Stmt) -> Block { Block { test: Test::End, body } }
-    pub fn new_always(body: Stmt) -> Block { Block { test: Test::Always, body } }
-    pub fn new_expr(expr: Expr, body: Stmt) -> Block { Block { test: Test::Expr(expr), body } }
-}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
     Number(f64),
     String(String),
-    Ident(String),
     BinOp(Box<Expr>, BinOp, Box<Expr>),
     LogicalOp(Box<Expr>, LogicalOp, Box<Expr>),
     Variable(String),
+    Column(Box<Expr>),
 }
 
 impl Display for Expr {
@@ -48,19 +41,22 @@ impl Display for Expr {
         match self {
             Expr::Variable(n) => write!(f, "var {}", n),
             Expr::String(str) => write!(f, "\"{}\"", str),
-            Expr::Ident(str) => write!(f, "{}", str),
             Expr::Number(n) => write!(f, "{}", n),
             Expr::BinOp(left, op, right) => write!(f, "{}{}{}", left, op, right),
             Expr::LogicalOp(left, op, right) => write!(f, "{}{}{}", left, op, right),
+            Expr::Column(col) => write!(f, "{}", col),
         }
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Program {
-    pub body: Vec<Block>,
+    pub begins: Vec<Stmt>,
+    pub ends: Vec<Stmt>,
+    pub pattern_actions: Vec<PatternAction>,
 }
 
 impl Program {
-    pub fn new(body: Vec<Block>) -> Program { Program { body } }
+    pub fn new(begins: Vec<Stmt>, ends: Vec<Stmt>, pattern_actions: Vec<PatternAction>) -> Program { Program { begins, ends, pattern_actions } }
+    pub fn new_action_only(stmt: Stmt) -> Program { Program { begins: vec![], ends: vec![], pattern_actions: vec![PatternAction::new_action_only(stmt)] } }
 }

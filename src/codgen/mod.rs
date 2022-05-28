@@ -10,7 +10,7 @@ use inkwell::basic_block::BasicBlock;
 use inkwell::types::{StructType};
 use inkwell::values::{AnyValue, BasicValue, FloatValue, FunctionValue, InstructionOpcode};
 use crate::{BinOp, Expr};
-use crate::parser::{Test, Stmt, Program};
+use crate::parser::{Stmt, Program, PatternAction};
 
 #[no_mangle]
 pub extern "C" fn print_float_64(num: f64) {
@@ -111,25 +111,28 @@ impl<'ctx> CodeGen<'ctx> {
         let bb = context.append_basic_block(function, ROOT);
         self.builder.position_at_end(bb);
 
-        for block in prog.body.iter().filter(|b| b.test == Test::Begin) {
-            self.compile_block(&block, context);
+
+        for begin in prog.begins.iter() {
+            self.compile_stmt(begin, context);
         }
-        for block in prog.body.iter().filter(|b| b.test != Test::Begin && b.test != Test::End) {
-            self.compile_block(&block, context);
+
+        for pa in prog.pattern_actions.iter() {
+            self.compile_pattern_action(pa, context);
         }
-        for block in prog.body.iter().filter(|b| b.test == Test::End) {
-            self.compile_block(&block, context);
+
+        for end in prog.ends.iter() {
+            self.compile_stmt(end, context);
         }
 
 
         // If the last instruction isn't a return, add one and return 0.0.
         let zero = context.f64_type().const_float(0.0);
         match self.builder.get_insert_block().unwrap().get_last_instruction() {
-            None => { self.builder.build_return(Some(&zero)); }, // No instructions in the block
+            None => { self.builder.build_return(Some(&zero)); } // No instructions in the block
             Some(last) => {
                 match last.get_opcode() {
-                    InstructionOpcode::Return => {}, // it is a return, do nothing
-                    _ => { self.builder.build_return(Some(&zero)); },
+                    InstructionOpcode::Return => {} // it is a return, do nothing
+                    _ => { self.builder.build_return(Some(&zero)); }
                 }
             }
         };
@@ -140,46 +143,40 @@ impl<'ctx> CodeGen<'ctx> {
         // unsafe { self.execution_engine.get_function(ROOT).ok() }.expect("to get root func")
     }
 
-    fn compile_block(&mut self, block: &crate::parser::Block, context: &'ctx Context) {
-        match &block.test {
-            Test::Expr(expr) => {
-                let test_passes_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "test_passes_bb");
-                let continue_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "block_continue");
+    fn compile_pattern_action(&mut self, pa: &PatternAction, context: &'ctx Context) {
+        if let Some(test) = &pa.pattern {
 
-                let predicate = self.compile_expr(expr, context);
-                let zero = context.f64_type().const_float(0.0);
-                let comparison = self.builder.build_float_compare(FloatPredicate::OEQ, predicate, zero, "block_test");
+            let action_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "action_bb");
+            let continue_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "continue_bb");
 
-                self.builder.build_conditional_branch(comparison, test_passes_bb, continue_bb);
+            let predicate = self.compile_expr(test, context);
+            let zero = context.f64_type().const_float(0.0);
+            let comparison = self.builder.build_float_compare(FloatPredicate::OEQ, predicate, zero, "pattern-action-test");
 
-                // --->test --(true)--> test_pass_basic_block  ------> continue
-                //          --(false)--------------------------------/
+            self.builder.build_conditional_branch(comparison, action_bb, continue_bb);
 
-                self.builder.position_at_end(test_passes_bb);
-                self.scopes.begin_scope();
-                let test_pass_bb_final = self.compile_stmt(&block.body, context);
-                self.builder.build_unconditional_branch(continue_bb);
-                let test_passes_scope = self.scopes.end_scope();
+            self.builder.position_at_end(action_bb);
+            self.scopes.begin_scope();
+            let action_bb_final = self.compile_stmt(&pa.action, context);
+            let action_bb_scope = self.scopes.end_scope();
+            self.builder.build_unconditional_branch(continue_bb);
 
-
-                self.build_phis(vec![(test_pass_bb_final, test_passes_scope)], context);
-            }
-            Test::Begin | Test::End | Test::Always => {
-                self.compile_stmt(&block.body, context);
-            }
+            self.builder.position_at_end(continue_bb);
+            self.build_phis(vec![(action_bb, action_bb_scope)], context);
+        } else {
+            self.compile_stmt(&pa.action, context);
         }
     }
 
     fn compile_stmt(&mut self, stmt: &Stmt, context: &'ctx Context) -> BasicBlock<'ctx> {
         match stmt {
-            Stmt::Expr(_) => panic!("cannot compile expression stmt"),
+            Stmt::Expr(expr) => {self.compile_expr(expr, context);},
             Stmt::Print(expr) => {
                 let res = self.compile_expr(expr, context);
                 self.builder.build_call(self.print_func, &[res.into()], "print_f64_call");
             }
             Stmt::Assign(name, expr) => {
                 let fin = self.compile_expr(expr, context);
-                // todo: check if name is already in scope SSA!
                 self.scopes.insert(name.clone(), fin);
             }
             Stmt::Return(result) => {
@@ -234,7 +231,7 @@ impl<'ctx> CodeGen<'ctx> {
     fn compile_expr(&mut self, expr: &Expr, context: &'ctx Context) -> FloatValue<'ctx> {
         match expr {
             Expr::String(_str) => context.f64_type().const_float(1.0),
-            Expr::Ident(str) => self.scopes.lookup(str).expect("to be defined"),
+            Expr::Variable(str) => self.scopes.lookup(str).expect("to be defined"), // todo: default value
             Expr::Number(num) => context.f64_type().const_float(*num),
             Expr::BinOp(left, op, right) => {
                 let name = self.name();
@@ -248,7 +245,9 @@ impl<'ctx> CodeGen<'ctx> {
                     _ => panic!("only arithmetic")
                 }
             }
-            Expr::Variable(name) => self.scopes.lookup(&name).unwrap(),
+            Expr::Column(expr) => {
+                self.compile_expr(expr, context)
+            }
             Expr::LogicalOp(_, _, _) => { panic!("logic not done yet") }
         }
     }
