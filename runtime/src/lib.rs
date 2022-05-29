@@ -1,4 +1,3 @@
-use std::ffi::CString;
 use std::fmt::{Display, Formatter, write};
 use std::io::Write;
 
@@ -44,8 +43,20 @@ impl Display for ValueRusty {
 
 #[no_mangle]
 pub extern "C" fn print_value(tag: i8, value: i64) {
+    println!("tag:{} i64:{} float:{} bytes:{:?}", tag, value,  f64::from_le_bytes(value.to_le_bytes()), value.to_le_bytes());
     println!("{}", ValueRusty::new(tag, value))
 }
+
+#[no_mangle]
+pub extern "C" fn print_mismatch() {
+    eprintln!("Tried to mix float and integer operations!");
+}
+
+#[no_mangle]
+pub extern "C" fn get_float() -> f64 {
+    return 1.1;
+}
+
 
 #[no_mangle]
 pub extern "C" fn to_bool_i64(tag: i8, value: i64) -> i64 {

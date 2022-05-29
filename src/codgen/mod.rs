@@ -1,6 +1,7 @@
 mod scopes;
 mod types;
 
+use std::any::Any;
 use std::collections::{HashSet};
 use std::path::Path;
 use inkwell::builder::Builder;
@@ -9,8 +10,8 @@ use inkwell::execution_engine::{ExecutionEngine};
 use inkwell::module::{Linkage, Module};
 use inkwell::{IntPredicate};
 use inkwell::basic_block::BasicBlock;
-use inkwell::types::{StructType};
-use inkwell::values::{AggregateValue, AnyValue, BasicMetadataValueEnum, BasicValue, FunctionValue, InstructionOpcode, IntValue, StructValue};
+use inkwell::types::{FloatType, IntType, StructType};
+use inkwell::values::{AggregateValue, AnyValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FloatValue, FunctionValue, InstructionOpcode, IntValue, StructValue};
 use crate::{BinOp, Expr};
 use crate::codgen::scopes::{ScopeInfo, Scopes};
 use crate::codgen::types::Types;
@@ -105,6 +106,7 @@ impl<'ctx> CodeGen<'ctx> {
         }
 
 
+        println!("pre ret");
         // If the last instruction isn't a return, add one and return 0.0.
         let zero = context.i64_type().const_int(0, false);
         match self.builder.get_insert_block().unwrap().get_last_instruction() {
@@ -117,13 +119,14 @@ impl<'ctx> CodeGen<'ctx> {
             }
         };
 
-        let str = self.module.print_to_string().to_string().replace("\\n", "\n");
-        println!("{}", str);
+        println!("done with ret");
+        println!("{}", self.module.print_to_string().to_string().replace("\\n", "\n"));
         self.module.write_bitcode_to_path(Path::new("/tmp/crawk.bc"));
         // unsafe { self.execution_engine.get_function(ROOT).ok() }.expect("to get root func")
     }
 
     fn compile_to_bool(&mut self, expr: &Expr, context: &'ctx Context) -> IntValue<'ctx> {
+        println!("compile to bool");
         let result = self.compile_expr(expr, context);
         let args = self.value_for_ffi(result);
         self.builder.build_call(
@@ -157,25 +160,42 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
+    fn print_is(&self, basic: BasicValueEnum) {
+        println!("-=-=-=-=-=-=-==-");
+        println!("is_array_value: {}", basic.is_array_value());
+        println!("is_int_value: {}", basic.is_int_value());
+        println!("is_float_value: {}", basic.is_float_value());
+        println!("is_pointer_value: {}", basic.is_pointer_value());
+        println!("is_struct_value: {}", basic.is_struct_value());
+        println!("is_vector_value: {}", basic.is_vector_value());
+    }
+
     fn value_for_ffi(&self, result: StructValue<'ctx>) -> Vec<BasicMetadataValueEnum<'ctx>> {
-        let field1 = result.const_extract_value(&mut [0]);
-        let field2 = result.const_extract_value(&mut [1]);
-        vec![field1.into(), field2.into()]
+        println!("{}", self.module.print_to_string().to_string().replace("\\n", "\n"));
+        let f0 = self.builder.build_extract_value(result, 0, "field1").unwrap();
+        let f1 = self.builder.build_extract_value(result, 1, "field2").unwrap();
+        return vec![f0.into(), f1.into()];
     }
 
     fn compile_stmt(&mut self, stmt: &Stmt, context: &'ctx Context) -> BasicBlock<'ctx> {
         match stmt {
-            Stmt::Expr(expr) => { self.compile_expr(expr, context); }
+            Stmt::Expr(expr) => {self.compile_expr(expr, context);},
             Stmt::Print(expr) => {
+                println!("stmt: print");
                 let result = self.compile_expr(expr, context);
+                println!("pre value for ffi print");
                 let args = self.value_for_ffi(result);
+                println!("got args {:?}", args);
+                println!("print type {:?}", self.types.print);
                 self.builder.build_call(self.types.print, args.as_slice().into(), "print_value_call");
+                println!("built call");
             }
             Stmt::Assign(name, expr) => {
                 let fin = self.compile_expr(expr, context);
                 self.scopes.insert(name.clone(), fin);
             }
             Stmt::Return(result) => {
+                println!("RETURN");
                 let fin = match result {
                     None => context.i64_type().const_int(0, false),
                     Some(val) => self.compile_to_bool(val, context),
@@ -218,11 +238,23 @@ impl<'ctx> CodeGen<'ctx> {
 
                 self.build_phis(vec![(then_bb_final, then_scope), (else_bb_final, else_scope)], context);
 
+                println!("done building phis");
                 return continue_bb;
             }
         }
         self.builder.get_insert_block().unwrap()
     }
+
+    fn cast_float_to_int(&self, float: FloatValue<'ctx>, context: &'ctx Context) -> IntValue<'ctx> {
+        self.builder.build_bitcast::<IntType, FloatValue>(
+            float, context.i64_type(), "cast-to-int").into_int_value()
+    }
+
+    fn cast_int_to_float(&self, int: IntValue<'ctx>, context: &'ctx Context) -> FloatValue<'ctx> {
+        self.builder.build_bitcast::<FloatType, IntValue>(
+            int, context.f64_type().into(), "cast-to-float").into_float_value()
+    }
+
 
     fn compile_expr(&mut self, expr: &Expr, context: &'ctx Context) -> StructValue<'ctx> {
         match expr {
@@ -235,6 +267,7 @@ impl<'ctx> CodeGen<'ctx> {
                 self.create_value(Value::Int(*num), context)
             }
             Expr::BinOp(left, op, right) => {
+                let neg_one_i64 = context.i64_type().const_int((-(1 as i64)) as u64, true);
                 let neg_one = context.i8_type().const_int((-(1 as i64)) as u64, true);
                 let zero_i8 = context.i8_type().const_int(0, false); // sign extension doesn't matter it's positive
                 let one_i8 = context.i8_type().const_int(1, false);
@@ -243,16 +276,16 @@ impl<'ctx> CodeGen<'ctx> {
                 let l = self.compile_expr(left, context);
                 let r = self.compile_expr(right, context);
 
-                let left_tag = l.const_extract_value(&mut [0]).into_int_value();
-                let right_tag = r.const_extract_value(&mut [0]).into_int_value();
+                let left_tag = self.builder.build_extract_value(l, 0, "left_tag").unwrap().into_int_value();
+                let right_tag = self.builder.build_extract_value(r, 0, "left_tag").unwrap().into_int_value();
 
-                let left_is_f64 = self.builder.build_int_compare(IntPredicate::EQ, left_tag, zero_i8, "left_is_f64");
-                let right_is_f64 = self.builder.build_int_compare(IntPredicate::EQ, right_tag, zero_i8, "left_is_f64");
-                let left_is_i64 = self.builder.build_int_compare(IntPredicate::EQ, left_tag, one_i8, "left_is_i64");
-                let left_is_i64 = self.builder.build_int_compare(IntPredicate::EQ, right_tag, one_i8, "right_is_i64");
+                let left_is_f64 = self.builder.build_int_compare(IntPredicate::EQ, left_tag, one_i8, "left_is_f64");
+                let right_is_f64 = self.builder.build_int_compare(IntPredicate::EQ, right_tag, one_i8, "left_is_f64");
+                let left_is_i64 = self.builder.build_int_compare(IntPredicate::EQ, left_tag, zero_i8, "left_is_i64");
+                let right_is_i64 = self.builder.build_int_compare(IntPredicate::EQ, right_tag, zero_i8, "right_is_i64");
 
                 let both_f64 = self.builder.build_and(left_is_f64, right_is_f64, "both_f64");
-                let both_i64 = self.builder.build_and(left_is_f64, right_is_f64, "both_i64");
+                let both_i64 = self.builder.build_and(left_is_i64, right_is_i64, "both_i64");
 
                 // Blocks:
                 // start -> both_f64 or not_both_f64
@@ -273,10 +306,13 @@ impl<'ctx> CodeGen<'ctx> {
                 let both_f64_result = {
                     // Both f64 basic block --> continue or not_both_f64
                     self.builder.position_at_end(both_f64_bb);
-                    self.scopes.begin_scope();
-                    let left_float = l.const_extract_value(&mut [1]).into_float_value();
-                    let right_float = r.const_extract_value(&mut [1]).into_float_value();
-                    let name = format!("{}{}", self.name(), "-both-f64-binop");
+                    let left_float = self.builder.build_extract_value(l, 1, "left_float").unwrap().into_int_value();
+                    let right_float = self.builder.build_extract_value(r, 1, "right_float").unwrap().into_int_value();
+
+                    let left_float = self.cast_int_to_float(left_float, context);
+                    let right_float = self.cast_int_to_float(right_float, context);
+
+                    let name = format!("{}{}", self.name(), "-both-f64-binop-tag");
                     let res = match op {
                         BinOp::Minus => self.builder.build_float_sub(left_float, right_float, &name),
                         BinOp::Plus => self.builder.build_float_add(left_float, right_float, &name),
@@ -284,47 +320,58 @@ impl<'ctx> CodeGen<'ctx> {
                         BinOp::Star => self.builder.build_float_mul(left_float, right_float, &name),
                         _ => panic!("only arithmetic")
                     };
+
+                    let res_as_i64: IntValue = self.builder.build_bitcast::<IntType, FloatValue>(
+                        res, context.i64_type().into(), "cast-float-back-to-i64").into_int_value();
+
+
+
+                    let result = self.types.value.const_named_struct(&[one_i8.into(), neg_one_i64.into()]);
+                    let result = self.builder.build_insert_value(result, res_as_i64, 1, "f64-result-binop").unwrap();
                     self.builder.build_unconditional_branch(continue_bb);
-                    self.types.value.const_named_struct(&[one_i8.into(), res.into()])
+                    result
                 };
 
+                self.builder.position_at_end(not_both_f64_bb);
                 self.builder.build_conditional_branch(both_i64, both_i64_bb, mismatch_bb);
 
                 // Not both f64 basic block  ---> both_i64 or mismatch
                 self.builder.position_at_end(both_i64_bb);
 
                 let both_i64_result = {
-                    let left_float = l.const_extract_value(&mut [1]).into_int_value();
-                    let right_float = r.const_extract_value(&mut [1]).into_int_value();
+
+                    let left_int = self.builder.build_extract_value(l, 1, "left_float").unwrap().into_int_value();
+                    let right_int = self.builder.build_extract_value(r, 1, "right_float").unwrap().into_int_value();
                     let name = format!("{}{}", self.name(), "-both-i64-binop");
                     let res = match op {
-                        BinOp::Minus => self.builder.build_int_sub(left_float, right_float, &name),
-                        BinOp::Plus => self.builder.build_int_add(left_float, right_float, &name),
-                        BinOp::Slash => self.builder.build_int_signed_div(left_float, right_float, &name),
-                        BinOp::Star => self.builder.build_int_mul(left_float, right_float, &name),
+                        BinOp::Minus => self.builder.build_int_sub(left_int, right_int, &name),
+                        BinOp::Plus => self.builder.build_int_add(left_int, right_int, &name),
+                        BinOp::Slash => self.builder.build_int_signed_div(left_int, right_int, &name),
+                        BinOp::Star => self.builder.build_int_mul(left_int, right_int, &name),
                         _ => panic!("only arithmetic")
                     };
+
+                    let result = self.types.value.const_named_struct(&[zero_i8.into(), neg_one_i64.into()]);
+                    let res = self.builder.build_insert_value(result, res, 1, "i64-result-binop").unwrap();
                     self.builder.build_unconditional_branch(continue_bb);
-                    self.types.value.const_named_struct(&[zero_i8.into(), res.into()])
+                    res
                 };
 
                 // Return -1 if types mismatch
                 self.builder.position_at_end(mismatch_bb);
-                self.builder.build_return(Some(&neg_one));
+                self.builder.build_call(self.types.mismatch, &[], "call mismatch print");
+                self.builder.build_return(Some(&neg_one_i64));
 
                 self.builder.position_at_end(continue_bb);
                 let phi = self.builder.build_phi(self.types.value, "tagged_enum_expr_result_phi");
 
+
                 let mut incoming: Vec<(&dyn BasicValue<'ctx>, BasicBlock<'ctx>)> = vec![];
                 incoming.push((&both_i64_result, both_i64_bb));
-                // for (pred_block, pred_scope) in predecessors.iter() {
-                //     let value_in_block = pred_scope.get(&assigned_var)
-                //         .or(Some(&existing_defn)).unwrap();
-                //     incoming.push((value_in_block, *pred_block));
-                // }
-
+                incoming.push((&both_f64_result, both_f64_bb));
                 phi.add_incoming(incoming.as_slice());
-                phi.as_any_value_enum().into_struct_value()
+                println!("done with binop");
+                phi.as_basic_value().into_struct_value()
             }
             Expr::Column(expr) => {
                 self.compile_expr(expr, context)
@@ -351,17 +398,17 @@ impl<'ctx> CodeGen<'ctx> {
             if handled.contains(&assigned_var) { continue; }
             handled.insert(assigned_var.clone());
             if let Some(existing_defn) = self.scopes.lookup(&assigned_var) {
-                let phi = self.builder.build_phi(context.f64_type(), &format!("phi_for_{}", assigned_var));
+                let phi = self.builder.build_phi(self.types.value.clone(), &format!("phi_for_{}", assigned_var));
                 let mut incoming: Vec<(&dyn BasicValue<'ctx>, BasicBlock<'ctx>)> = vec![];
                 for (pred_block, pred_scope) in predecessors.iter() {
-                    let value_in_block = pred_scope.get(&assigned_var)
-                        .or(Some(&existing_defn)).unwrap();
+                    let value_in_block = match pred_scope.get(&assigned_var) {
+                        None => &existing_defn,
+                        Some(val_in_scope) => val_in_scope,
+                    };
                     incoming.push((value_in_block, *pred_block));
                 }
-                println!("incming");
                 phi.add_incoming(incoming.as_slice());
-                println!("incming");
-                self.scopes.insert(assigned_var, phi.as_any_value_enum().into_struct_value())
+                self.scopes.insert(assigned_var, phi.as_any_value_enum().into_struct_value());
             }
         }
     }

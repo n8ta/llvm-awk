@@ -1,5 +1,10 @@
 {
- print 123.03;
- print 0;
- print 1;
+z = 4 + 4;
+z = z + z;
+if (z)  {
+    z = 1;
+} else {
+    z = 123;
+}
+print z;
 }
