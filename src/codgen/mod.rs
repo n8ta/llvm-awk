@@ -125,11 +125,10 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn compile_to_bool(&mut self, expr: &Expr, context: &'ctx Context) -> IntValue<'ctx> {
         let result = self.compile_expr(expr, context);
-        let fields = vec![result.const_extract_value(&mut [0, 1]).into()];
-        let fields_slice = fields.as_slice();
+        let args = self.value_for_ffi(result);
         self.builder.build_call(
             self.types.to_bool,
-            fields_slice.into(),
+            args.as_slice().into(),
             "to_bool_i64").as_any_value_enum().into_int_value()
     }
 
@@ -158,18 +157,18 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    // fn value_for_ffi(&self, result: StructValue<'ctx'>) -> Vec<BasicMetadataValueEnum<'ctx>> {
-    //
-    // }
+    fn value_for_ffi(&self, result: StructValue<'ctx>) -> Vec<BasicMetadataValueEnum<'ctx>> {
+        let field1 = result.const_extract_value(&mut [0]);
+        let field2 = result.const_extract_value(&mut [1]);
+        vec![field1.into(), field2.into()]
+    }
 
     fn compile_stmt(&mut self, stmt: &Stmt, context: &'ctx Context) -> BasicBlock<'ctx> {
         match stmt {
             Stmt::Expr(expr) => { self.compile_expr(expr, context); }
             Stmt::Print(expr) => {
                 let result = self.compile_expr(expr, context);
-                let field1 = result.const_extract_value(&mut [0]);
-                let field2 = result.const_extract_value(&mut [1]);
-                let args = vec![field1.into(), field2.into()];
+                let args = self.value_for_ffi(result);
                 self.builder.build_call(self.types.print, args.as_slice().into(), "print_value_call");
             }
             Stmt::Assign(name, expr) => {
@@ -359,7 +358,9 @@ impl<'ctx> CodeGen<'ctx> {
                         .or(Some(&existing_defn)).unwrap();
                     incoming.push((value_in_block, *pred_block));
                 }
+                println!("incming");
                 phi.add_incoming(incoming.as_slice());
+                println!("incming");
                 self.scopes.insert(assigned_var, phi.as_any_value_enum().into_struct_value())
             }
         }
