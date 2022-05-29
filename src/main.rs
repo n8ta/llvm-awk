@@ -1,5 +1,3 @@
-extern crate core;
-
 use std::process::exit;
 
 use crate::lexer::{BinOp, lex};
@@ -35,7 +33,9 @@ fn main() {
     }
 
     let tokens = lex(&contents).unwrap();
+
     let program = parse(tokens);
+    println!("PROGRAM\n{:?}", program);
 
     codgen::compile_and_run(program);
 }

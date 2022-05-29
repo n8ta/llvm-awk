@@ -1,10 +1,7 @@
 use std::ffi::CString;
+use std::fmt::{Display, Formatter, write};
 use std::io::Write;
 
-#[no_mangle]
-pub extern "C" fn print_f64(number: f64) {
-    println!("{}", number)
-}
 
 #[repr(C)]
 #[derive(Debug)]
@@ -13,14 +10,49 @@ pub struct Value {
     value: [u8; 8],
 }
 
-#[no_mangle]
-pub extern "C" fn to_bool_i64(value: Value) -> i64 {
-    println!("to_bool_i64 {:?}", value);
-    if value.tag == 0 {
-        let i64_val = i64::from_le_bytes(value.value);
-        if i64_val == 0 { 0 as i64} else { 1 as i64 }
-    } else {
-        let f64_val = f64::from_le_bytes(value.value);
-        if f64_val == 0.0 { 0 as i64 } else { 1 as i64 }
+#[derive(Debug)]
+enum ValueRusty {
+    Int(i64),
+    Float(f64),
+}
+
+impl ValueRusty {
+    pub fn new(tag: i8, value: i64)-> Self {
+        match tag {
+            0 => {
+                ValueRusty::Int(value)
+            },
+            1 => {
+                let float = unsafe { std::mem::transmute::<i64, f64>(value) };
+                ValueRusty::Float(float)
+            }
+            _ => {
+                panic!("Unknown value {:?}", value);
+            }
+        }
     }
+}
+
+impl Display for ValueRusty {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValueRusty::Int(val) => write!(f, "{}", val),
+            ValueRusty::Float(val) => write!(f, "{}", val),
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn print_value(tag: i8, value: i64) {
+    println!("{}", ValueRusty::new(tag, value))
+}
+
+#[no_mangle]
+pub extern "C" fn to_bool_i64(tag: i8, value: i64) -> i64 {
+    let value = ValueRusty::new(tag, value);
+    let res = match value {
+        ValueRusty::Int(val) => val == 0,
+        ValueRusty::Float(val) => val == 0.0,
+    };
+    if res { 0 } else { 1 }
 }

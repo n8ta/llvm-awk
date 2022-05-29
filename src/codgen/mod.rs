@@ -1,15 +1,19 @@
-use std::any::Any;
-use std::collections::{HashMap, HashSet};
+mod scopes;
+mod types;
+
+use std::collections::{HashSet};
 use std::path::Path;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::execution_engine::{ExecutionEngine};
 use inkwell::module::{Linkage, Module};
-use inkwell::{AddressSpace, FloatPredicate, IntPredicate};
+use inkwell::{IntPredicate};
 use inkwell::basic_block::BasicBlock;
 use inkwell::types::{StructType};
-use inkwell::values::{AggregateValue, AnyValue, BasicValue, FloatValue, FunctionValue, InstructionOpcode, IntValue, StructValue};
+use inkwell::values::{AggregateValue, AnyValue, BasicMetadataValueEnum, BasicValue, FunctionValue, InstructionOpcode, IntValue, StructValue};
 use crate::{BinOp, Expr};
+use crate::codgen::scopes::{ScopeInfo, Scopes};
+use crate::codgen::types::Types;
 use crate::parser::{Stmt, Program, PatternAction};
 
 /// Value type
@@ -18,104 +22,72 @@ use crate::parser::{Stmt, Program, PatternAction};
 /// | number i64
 /// | number f64
 
-#[no_mangle]
-pub extern "C" fn print_float_64(num: f64) {
-    println!("{}", num);
-}
-
 pub fn compile_and_run(prog: Program) {
     let context = Context::create();
     let mut codegen = CodeGen::new(&context);
     codegen.compile(prog, &context);
 }
 
+pub enum Value {
+    Int(i64),
+    Float(f64),
+}
+
 const ROOT: &'static str = "main";
 
-type ScopeInfo<'ctx> = HashMap<String, StructValue<'ctx>>;
-
-struct Scope<'ctx> {
-    pub values: ScopeInfo<'ctx>,
-}
-
-struct Scopes<'ctx> {
-    scopes: Vec<Scope<'ctx>>,
-}
-
-impl<'ctx> Scopes<'ctx> {
-    pub fn new() -> Self {
-        let scope = Scope { values: HashMap::default() };
-        Scopes { scopes: vec![scope] }
-    }
-    pub fn insert(&mut self, name: String, value: StructValue<'ctx>) {
-        self.scopes.last_mut().unwrap().values.insert(name, value);
-    }
-    pub fn get(&self, name: &str) -> Option<&StructValue<'ctx>> {
-        for scope in self.scopes.iter().rev() {
-            if let Some(val) = scope.values.get(name) {
-                return Some(val);
-            }
-        }
-        None
-    }
-    pub fn begin_scope(&mut self) {
-        self.scopes.push(Scope { values: HashMap::default() });
-    }
-    pub fn end_scope(&mut self) -> ScopeInfo<'ctx> {
-        self.scopes.pop().unwrap().values
-    }
-    pub fn lookup(&self, name: &str) -> Option<StructValue<'ctx>> {
-        for scope in self.scopes.iter().rev() {
-            if let Some(val) = scope.values.get(name) {
-                return Some(val.clone());
-            }
-        }
-        None
-    }
-}
 
 struct CodeGen<'ctx> {
     module: Module<'ctx>,
     builder: Builder<'ctx>,
     execution_engine: ExecutionEngine<'ctx>,
     counter: usize,
-    value_type: StructType<'ctx>,
     scopes: Scopes<'ctx>,
-    print_func: FunctionValue<'ctx>,
-    to_bool_i64_func: FunctionValue<'ctx>,
+    types: Types<'ctx>,
 }
 
 impl<'ctx> CodeGen<'ctx> {
     fn new(context: &'ctx Context) -> Self {
         let module = context.create_module("sum");
         let execution_engine = module.create_execution_engine().expect("To be able to create exec engine");
-        let i8 = context.i8_type();
-        let i64 = context.i64_type();
-        let value_type = context.struct_type(&[i8.into(), i64.into()], false);
-        let f64_type = context.f64_type();
-        let print_f64_type = context.void_type().fn_type(&[f64_type.into()], false);
-        let to_bool_i64_type = context.i64_type().fn_type(&[value_type.into()], false);
-        let print_func = module.add_function("print_f64", print_f64_type, Some(Linkage::ExternalWeak));
-        let to_bool_i64_func = module.add_function("to_bool_i64", to_bool_i64_type, Some(Linkage::ExternalWeak));
+        let types = Types::new(context, &module);
         let codegen = CodeGen {
             module,
             builder: context.create_builder(),
             execution_engine,
             counter: 0,
-            value_type,
+            types,
             scopes: Scopes::new(),
-            print_func,
-            to_bool_i64_func,
         };
         codegen
     }
+
+    fn create_value(&mut self, value: Value, context: &'ctx Context) -> StructValue<'ctx> {
+        let zero_i8 = context.i8_type().const_int(0, false);
+        let one_i8 = context.i8_type().const_int(1, false);
+
+        match value {
+            Value::Int(num) => {
+                let val = context.i64_type().const_int(num as u64, false);
+                self.types.value.const_named_struct(&[zero_i8.into(), val.into()])
+            }
+            Value::Float(num) => {
+                let val = unsafe {
+                    std::mem::transmute::<f64, u64>(num)
+                };
+                let val = context.i64_type().const_int(val, false);
+                self.types.value.const_named_struct(&[one_i8.into(), val.into()])
+            }
+        }
+    }
+
     fn name(&mut self) -> String {
         self.counter += 1;
         format!("tmp{}", self.counter)
     }
     fn compile(&mut self, prog: Program, context: &'ctx Context) {
-        let f64_type = context.f64_type();
-        let f64_func = f64_type.fn_type(&[], false);
-        let function = self.module.add_function(ROOT, f64_func, Some(Linkage::External));
+        let i64_type = context.i64_type();
+        let i64_func = context.i64_type().fn_type(&[], false);
+        let function = self.module.add_function(ROOT, i64_func, Some(Linkage::External));
         let bb = context.append_basic_block(function, ROOT);
         self.builder.position_at_end(bb);
 
@@ -134,7 +106,7 @@ impl<'ctx> CodeGen<'ctx> {
 
 
         // If the last instruction isn't a return, add one and return 0.0.
-        let zero = context.f64_type().const_float(0.0);
+        let zero = context.i64_type().const_int(0, false);
         match self.builder.get_insert_block().unwrap().get_last_instruction() {
             None => { self.builder.build_return(Some(&zero)); } // No instructions in the block
             Some(last) => {
@@ -146,19 +118,23 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         let str = self.module.print_to_string().to_string().replace("\\n", "\n");
-        self.module.write_bitcode_to_path(Path::new("/tmp/crawk.bc"));
         println!("{}", str);
+        self.module.write_bitcode_to_path(Path::new("/tmp/crawk.bc"));
         // unsafe { self.execution_engine.get_function(ROOT).ok() }.expect("to get root func")
     }
 
     fn compile_to_bool(&mut self, expr: &Expr, context: &'ctx Context) -> IntValue<'ctx> {
         let result = self.compile_expr(expr, context);
-        self.builder.build_call(self.to_bool_i64_func, &[result.into()], "to_bool_i64").as_any_value_enum().into_int_value()
+        let fields = vec![result.const_extract_value(&mut [0, 1]).into()];
+        let fields_slice = fields.as_slice();
+        self.builder.build_call(
+            self.types.to_bool,
+            fields_slice.into(),
+            "to_bool_i64").as_any_value_enum().into_int_value()
     }
 
     fn compile_pattern_action(&mut self, pa: &PatternAction, context: &'ctx Context) {
         if let Some(test) = &pa.pattern {
-
             let action_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "action_bb");
             let continue_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "continue_bb");
 
@@ -182,12 +158,19 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
+    // fn value_for_ffi(&self, result: StructValue<'ctx'>) -> Vec<BasicMetadataValueEnum<'ctx>> {
+    //
+    // }
+
     fn compile_stmt(&mut self, stmt: &Stmt, context: &'ctx Context) -> BasicBlock<'ctx> {
         match stmt {
-            Stmt::Expr(expr) => {self.compile_expr(expr, context);},
+            Stmt::Expr(expr) => { self.compile_expr(expr, context); }
             Stmt::Print(expr) => {
-                let res = self.compile_expr(expr, context);
-                self.builder.build_call(self.print_func, &[res.into()], "print_f64_call");
+                let result = self.compile_expr(expr, context);
+                let field1 = result.const_extract_value(&mut [0]);
+                let field2 = result.const_extract_value(&mut [1]);
+                let args = vec![field1.into(), field2.into()];
+                self.builder.build_call(self.types.print, args.as_slice().into(), "print_value_call");
             }
             Stmt::Assign(name, expr) => {
                 let fin = self.compile_expr(expr, context);
@@ -247,15 +230,11 @@ impl<'ctx> CodeGen<'ctx> {
             Expr::String(_str) => todo!("Strings"), //context.f64_type().const_float(1.0),
             Expr::Variable(str) => self.scopes.lookup(str).expect("to be defined"), // todo: default value
             Expr::NumberF64(num) => {
-                let one_i8 = context.i8_type().const_int(1, false);
-                let val = context.f64_type().const_float(*num);
-                self.value_type.const_named_struct(&[one_i8.into(), val.into()])
-            },
+                self.create_value(Value::Float(*num), context)
+            }
             Expr::NumberI64(num) => {
-                let one_i8 = context.i8_type().const_int(1, false);
-                let val = context.i64_type().const_int(*num as u64, false);
-                self.value_type.const_named_struct(&[one_i8.into(), val.into()])
-            },
+                self.create_value(Value::Int(*num), context)
+            }
             Expr::BinOp(left, op, right) => {
                 let neg_one = context.i8_type().const_int((-(1 as i64)) as u64, true);
                 let zero_i8 = context.i8_type().const_int(0, false); // sign extension doesn't matter it's positive
@@ -265,7 +244,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let l = self.compile_expr(left, context);
                 let r = self.compile_expr(right, context);
 
-                let left_tag  = l.const_extract_value(&mut [0]).into_int_value();
+                let left_tag = l.const_extract_value(&mut [0]).into_int_value();
                 let right_tag = r.const_extract_value(&mut [0]).into_int_value();
 
                 let left_is_f64 = self.builder.build_int_compare(IntPredicate::EQ, left_tag, zero_i8, "left_is_f64");
@@ -307,8 +286,7 @@ impl<'ctx> CodeGen<'ctx> {
                         _ => panic!("only arithmetic")
                     };
                     self.builder.build_unconditional_branch(continue_bb);
-                    self.value_type.const_named_struct(&[one_i8.into(), res.into()])
-
+                    self.types.value.const_named_struct(&[one_i8.into(), res.into()])
                 };
 
                 self.builder.build_conditional_branch(both_i64, both_i64_bb, mismatch_bb);
@@ -328,7 +306,7 @@ impl<'ctx> CodeGen<'ctx> {
                         _ => panic!("only arithmetic")
                     };
                     self.builder.build_unconditional_branch(continue_bb);
-                    self.value_type.const_named_struct(&[zero_i8.into(), res.into()])
+                    self.types.value.const_named_struct(&[zero_i8.into(), res.into()])
                 };
 
                 // Return -1 if types mismatch
@@ -336,7 +314,7 @@ impl<'ctx> CodeGen<'ctx> {
                 self.builder.build_return(Some(&neg_one));
 
                 self.builder.position_at_end(continue_bb);
-                let phi = self.builder.build_phi(self.value_type, "tagged_enum_expr_result_phi");
+                let phi = self.builder.build_phi(self.types.value, "tagged_enum_expr_result_phi");
 
                 let mut incoming: Vec<(&dyn BasicValue<'ctx>, BasicBlock<'ctx>)> = vec![];
                 incoming.push((&both_i64_result, both_i64_bb));
