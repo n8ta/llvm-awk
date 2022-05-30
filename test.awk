@@ -1,10 +1,5 @@
 {
-z = 4 + 4;
-z = z + z;
-if (z)  {
-    z = 1;
-} else {
-    z = 123;
-}
-print z;
+print 1;
+print 2;
+print 3;
 }

@@ -18,7 +18,9 @@ comp_op
     "<"
     ">"
     ">="
-expr: equality
+expr: column
+    | str_concat
+str_concat: equality (equality)*
 equality: comparison ( eq_op comparison ) *
 comparison: term (ad_sub_op term ) *
 term: primary ( mult_div_op primary ) *

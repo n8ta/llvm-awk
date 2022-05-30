@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies]
 inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm13-0"] }
-llvm-sys = "130.0.4"
+tempdir = "0.3.7"

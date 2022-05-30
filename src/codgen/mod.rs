@@ -3,6 +3,7 @@ mod types;
 
 use std::any::Any;
 use std::collections::{HashSet};
+use std::env::var;
 use std::path::Path;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -10,6 +11,7 @@ use inkwell::execution_engine::{ExecutionEngine};
 use inkwell::module::{Linkage, Module};
 use inkwell::{IntPredicate};
 use inkwell::basic_block::BasicBlock;
+use inkwell::memory_buffer::MemoryBuffer;
 use inkwell::types::{FloatType, IntType, StructType};
 use inkwell::values::{AggregateValue, AnyValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FloatValue, FunctionValue, InstructionOpcode, IntValue, StructValue};
 use crate::{BinOp, Expr};
@@ -23,10 +25,10 @@ use crate::parser::{Stmt, Program, PatternAction};
 /// | number i64
 /// | number f64
 
-pub fn compile_and_run(prog: Program) {
+pub fn compile(prog: Program) -> MemoryBuffer {
     let context = Context::create();
     let mut codegen = CodeGen::new(&context);
-    codegen.compile(prog, &context);
+    codegen.compile(prog, &context)
 }
 
 pub enum Value {
@@ -85,9 +87,9 @@ impl<'ctx> CodeGen<'ctx> {
         self.counter += 1;
         format!("tmp{}", self.counter)
     }
-    fn compile(&mut self, prog: Program, context: &'ctx Context) {
+    fn compile(&mut self, prog: Program, context: &'ctx Context) -> MemoryBuffer {
         let i64_type = context.i64_type();
-        let i64_func = context.i64_type().fn_type(&[], false);
+        let i64_func = i64_type.fn_type(&[], false);
         let function = self.module.add_function(ROOT, i64_func, Some(Linkage::External));
         let bb = context.append_basic_block(function, ROOT);
         self.builder.position_at_end(bb);
@@ -106,7 +108,6 @@ impl<'ctx> CodeGen<'ctx> {
         }
 
 
-        println!("pre ret");
         // If the last instruction isn't a return, add one and return 0.0.
         let zero = context.i64_type().const_int(0, false);
         match self.builder.get_insert_block().unwrap().get_last_instruction() {
@@ -119,14 +120,12 @@ impl<'ctx> CodeGen<'ctx> {
             }
         };
 
-        println!("done with ret");
         println!("{}", self.module.print_to_string().to_string().replace("\\n", "\n"));
-        self.module.write_bitcode_to_path(Path::new("/tmp/crawk.bc"));
+        self.module.write_bitcode_to_memory()
         // unsafe { self.execution_engine.get_function(ROOT).ok() }.expect("to get root func")
     }
 
     fn compile_to_bool(&mut self, expr: &Expr, context: &'ctx Context) -> IntValue<'ctx> {
-        println!("compile to bool");
         let result = self.compile_expr(expr, context);
         let args = self.value_for_ffi(result);
         self.builder.build_call(
@@ -160,18 +159,7 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn print_is(&self, basic: BasicValueEnum) {
-        println!("-=-=-=-=-=-=-==-");
-        println!("is_array_value: {}", basic.is_array_value());
-        println!("is_int_value: {}", basic.is_int_value());
-        println!("is_float_value: {}", basic.is_float_value());
-        println!("is_pointer_value: {}", basic.is_pointer_value());
-        println!("is_struct_value: {}", basic.is_struct_value());
-        println!("is_vector_value: {}", basic.is_vector_value());
-    }
-
     fn value_for_ffi(&self, result: StructValue<'ctx>) -> Vec<BasicMetadataValueEnum<'ctx>> {
-        println!("{}", self.module.print_to_string().to_string().replace("\\n", "\n"));
         let f0 = self.builder.build_extract_value(result, 0, "field1").unwrap();
         let f1 = self.builder.build_extract_value(result, 1, "field2").unwrap();
         return vec![f0.into(), f1.into()];
@@ -181,21 +169,16 @@ impl<'ctx> CodeGen<'ctx> {
         match stmt {
             Stmt::Expr(expr) => {self.compile_expr(expr, context);},
             Stmt::Print(expr) => {
-                println!("stmt: print");
+                println!("compile print!");
                 let result = self.compile_expr(expr, context);
-                println!("pre value for ffi print");
                 let args = self.value_for_ffi(result);
-                println!("got args {:?}", args);
-                println!("print type {:?}", self.types.print);
                 self.builder.build_call(self.types.print, args.as_slice().into(), "print_value_call");
-                println!("built call");
             }
             Stmt::Assign(name, expr) => {
                 let fin = self.compile_expr(expr, context);
                 self.scopes.insert(name.clone(), fin);
             }
             Stmt::Return(result) => {
-                println!("RETURN");
                 let fin = match result {
                     None => context.i64_type().const_int(0, false),
                     Some(val) => self.compile_to_bool(val, context),
@@ -203,11 +186,9 @@ impl<'ctx> CodeGen<'ctx> {
                 self.builder.build_return(Some(&fin));
             }
             Stmt::Group(body) => {
-                self.scopes.begin_scope();
                 for stmt in body {
                     self.compile_stmt(stmt, context);
                 }
-                self.scopes.end_scope();
             }
             Stmt::If(test, true_blk, false_blk) => {
                 let false_blk = if let Some(fal) = false_blk { fal } else { panic!("must have false block") };
@@ -231,14 +212,14 @@ impl<'ctx> CodeGen<'ctx> {
                 self.builder.position_at_end(else_bb);
                 self.scopes.begin_scope();
                 let else_bb_final = self.compile_stmt(false_blk, context);
-                self.builder.build_unconditional_branch(continue_bb);
                 let else_scope = self.scopes.end_scope();
+                self.builder.build_unconditional_branch(continue_bb);
 
                 self.builder.position_at_end(continue_bb);
 
+                println!("then scope {:?} else scope {:?}", then_scope, else_scope);
                 self.build_phis(vec![(then_bb_final, then_scope), (else_bb_final, else_scope)], context);
 
-                println!("done building phis");
                 return continue_bb;
             }
         }
@@ -258,7 +239,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn compile_expr(&mut self, expr: &Expr, context: &'ctx Context) -> StructValue<'ctx> {
         match expr {
-            Expr::String(_str) => todo!("Strings"), //context.f64_type().const_float(1.0),
+            Expr::String(_str) => todo!("Strings"),
             Expr::Variable(str) => self.scopes.lookup(str).expect("to be defined"), // todo: default value
             Expr::NumberF64(num) => {
                 self.create_value(Value::Float(*num), context)
@@ -370,7 +351,6 @@ impl<'ctx> CodeGen<'ctx> {
                 incoming.push((&both_i64_result, both_i64_bb));
                 incoming.push((&both_f64_result, both_f64_bb));
                 phi.add_incoming(incoming.as_slice());
-                println!("done with binop");
                 phi.as_basic_value().into_struct_value()
             }
             Expr::Column(expr) => {
@@ -385,10 +365,13 @@ impl<'ctx> CodeGen<'ctx> {
         let mut variables = vec![];
 
         for pred in predecessors.iter() {
+            println!("pred....");
             for (name, _val) in pred.1.iter() {
                 variables.push(name.clone());
             }
         }
+
+        println!("VARS => {:?}", variables);
 
         if variables.len() == 0 {
             return;

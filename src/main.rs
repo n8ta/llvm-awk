@@ -1,12 +1,14 @@
 use std::process::exit;
 
 use crate::lexer::{BinOp, lex};
-use std::io::Read;
+use std::io::{Read, Write};
 use crate::parser::{Expr, parse};
 
 mod parser;
 mod lexer;
 mod codgen;
+mod test;
+mod runner;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -27,15 +29,15 @@ fn main() {
     };
 
     let mut contents: String = String::new();
-    if let Err(err) = file.read_to_string(&mut contents) {
-        eprintln!("Unable to read file @ '{}'\nError: {}", path, err);
-        exit(-1);
-    }
-
+    file.read_to_string(&mut contents).expect("couldnt read source file");
     let tokens = lex(&contents).unwrap();
+    println!("tokens {:?}" ,tokens);
 
     let program = parse(tokens);
-    println!("PROGRAM\n{:?}", program);
 
-    codgen::compile_and_run(program);
+    let bitcode = codgen::compile(program);
+    let (stdout, stderr, exit) = runner::run(bitcode);
+    println!("{}", stdout);
+    eprintln!("{}", stderr);
+    std::process::exit(exit)
 }

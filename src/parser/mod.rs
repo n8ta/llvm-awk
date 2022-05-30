@@ -141,34 +141,28 @@ impl Parser {
         let mut stmts = vec![];
         while self.peek().ttype() != TokenType::RightBrace {
             let stmt = if self.matches(vec![TokenType::Print]) {
-                let s = Stmt::Print(self.expression());
-                self.consume(TokenType::Semicolon, "Expected ; after print");
-                s
+                Stmt::Print(self.expression())
             } else if self.peek_next().ttype() == TokenType::Eq {
                 let str = if let Token::Ident(str) = self.consume(TokenType::Ident, "Expected identifier before '='") { str } else { panic!("Expected identifier before '='") };
                 self.consume(TokenType::Eq, "Expected '=' after identifier");
-                let s = Stmt::Assign(str, self.expression());
-                self.consume(TokenType::Semicolon, "Expected ';' after '='");
-                s
+                Stmt::Assign(str, self.expression())
             } else if self.matches(vec![TokenType::Ret]) {
-                let s = self.return_stmt();
-                self.consume(TokenType::Semicolon, "Expected ';' after return statement");
-                s
+                self.return_stmt()
             } else if self.matches(vec![TokenType::Print]) {
                 let expr = self.expression();
-                self.consume(TokenType::Semicolon, "Expected ';' after print");
                 Stmt::Print(expr)
             } else if self.matches(vec![TokenType::If]) {
                 self.if_stmt()
             } else if self.matches(vec![TokenType::LeftBrace]) {
                 let s = self.stmts();
-                self.consume(TokenType::RightBrace, "Expected } after a scope");
+                self.consume(TokenType::RightBrace, "Expected a right brace after a group");
                 s
             } else {
-                let s = Stmt::Expr(self.expression());
-                self.consume(TokenType::Semicolon, "Expected ';' after expression statement");
-                s
+                Stmt::Expr(self.expression())
             };
+            if self.peek().ttype() == TokenType::Semicolon {
+                self.consume(TokenType::Semicolon, "not possible");
+            }
             stmts.push(stmt);
         }
         if stmts.len() == 1 {
@@ -201,6 +195,9 @@ impl Parser {
         }
         self.equality()
     }
+    // fn str_concat(&mut self) -> Expr {
+    //     if self.mat
+    // }
     fn equality(&mut self) -> Expr {
         let mut expr = self.comparison();
         while self.matches(vec![TokenType::EqEq, TokenType::BangEq]) {
@@ -343,7 +340,7 @@ fn test_print() {
 #[test]
 fn test_group() {
     use crate::lexer::lex;
-    let str = "{{print 1;print 2;}}";
+    let str = "{{print 1; print 2;}}";
     assert_eq!(parse(lex(str).unwrap()), Program::new_action_only(Stmt::Group(vec![Stmt::Print(Expr::NumberI64(1)), Stmt::Print(Expr::NumberI64(2))])));
 }
 
@@ -386,6 +383,14 @@ fn test_pattern_only() {
     let str = "test";
     let actual = parse(lex(str).unwrap());
     assert_eq!(actual, Program::new(vec![], vec![], vec![PatternAction::new_pattern_only(Expr::Variable("test".to_string()))]));
+}
+
+#[test]
+fn test_print_no_semicolon() {
+    use crate::lexer::lex;
+    let str = "{ print 1 }";
+    let actual = parse(lex(str).unwrap());
+    assert_eq!(actual, Program::new(vec![], vec![], vec![PatternAction::new_action_only(Stmt::Print(Expr::NumberI64(1)))]));
 }
 
 #[test]

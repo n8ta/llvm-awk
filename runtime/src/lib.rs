@@ -43,7 +43,7 @@ impl Display for ValueRusty {
 
 #[no_mangle]
 pub extern "C" fn print_value(tag: i8, value: i64) {
-    println!("tag:{} i64:{} float:{} bytes:{:?}", tag, value,  f64::from_le_bytes(value.to_le_bytes()), value.to_le_bytes());
+    // println!("tag:{} i64:{} float:{} bytes:{:?}", tag, value,  f64::from_le_bytes(value.to_le_bytes()), value.to_le_bytes());
     println!("{}", ValueRusty::new(tag, value))
 }
 
