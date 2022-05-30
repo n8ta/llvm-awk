@@ -6,3 +6,8 @@ edition = "2021"
 [dependencies]
 inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm13-0"] }
 tempdir = "0.3.7"
+
+[[bin]]
+name = "llvm-awk"
+path = "src/main.rs"
+

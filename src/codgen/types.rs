@@ -11,19 +11,15 @@ pub struct Types<'ctx> {
 }
 
 impl<'ctx> Types<'ctx> {
-    pub fn new(context: &'ctx inkwell::context::Context, module: &Module<'ctx>) -> Types<'ctx> {
+    pub fn new(context: &'ctx inkwell::context::Context, runtime_mod: &Module<'ctx>) -> Types<'ctx> {
         let i8 = context.i8_type();
         let i64 = context.i64_type();
-        let f64_type = context.f64_type();
+        let print = runtime_mod.get_function("print_value").unwrap();
+        let to_bool= runtime_mod.get_function("to_bool_i64").unwrap();
+        let mismatch = runtime_mod.get_function("print_mismatch").unwrap();
+        let get_float = runtime_mod.get_function("get_float").unwrap();
         let value = context.struct_type(&[i8.into(), i64.into()], false);
-        let print_value_type = context.void_type().fn_type(&[i8.into(), i64.into()], false);
-        let mismatch_type = context.void_type().fn_type(&[], false);
-        let get_float_type = f64_type.fn_type(&[], false);
-        let to_bool_i64_type = context.i64_type().fn_type(&[i8.into(), i64.into()], false);
-        let print = module.add_function("print_value", print_value_type, Some(Linkage::ExternalWeak));
-        let to_bool = module.add_function("to_bool_i64", to_bool_i64_type, Some(Linkage::ExternalWeak));
-        let mismatch = module.add_function("print_mismatch", mismatch_type, Some(Linkage::ExternalWeak));
-        let get_float = module.add_function("get_float", get_float_type, Some(Linkage::ExternalWeak));
+
         Types {
             value,
             print,
@@ -31,5 +27,26 @@ impl<'ctx> Types<'ctx> {
             mismatch,
             get_float
         }
+
+
+        // let i8 = context.i8_type();
+        // let i64 = context.i64_type();
+        // let f64_type = context.f64_type();
+        // let value = context.struct_type(&[i8.into(), i64.into()], false);
+        // let print_value_type = context.void_type().fn_type(&[i8.into(), i64.into()], false);
+        // let mismatch_type = context.void_type().fn_type(&[], false);
+        // let get_float_type = f64_type.fn_type(&[], false);
+        // let to_bool_i64_type = context.i64_type().fn_type(&[i8.into(), i64.into()], false);
+        // let print = module.add_function("print_value", print_value_type, Some(Linkage::WeakAny));
+        // let to_bool = module.add_function("to_bool_i64", to_bool_i64_type, Some(Linkage::WeakAny));
+        // let mismatch = module.add_function("print_mismatch", mismatch_type, Some(Linkage::WeakAny));
+        // let get_float = module.add_function("get_float", get_float_type, Some(Linkage::WeakAny));
+        // Types {
+        //     value,
+        //     print,
+        //     to_bool,
+        //     mismatch,
+        //     get_float
+        // }
     }
 }

@@ -3,6 +3,7 @@ use std::process::exit;
 use crate::lexer::{BinOp, lex};
 use std::io::{Read, Write};
 use crate::parser::{Expr, parse};
+use crate::runner::run;
 
 mod parser;
 mod lexer;
@@ -12,7 +13,7 @@ mod runner;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-
+    let dump = args.contains(&format!("--dump"));
     let path = if let Some(path) = args.get(1) {
         path
     } else {
@@ -31,13 +32,19 @@ fn main() {
     let mut contents: String = String::new();
     file.read_to_string(&mut contents).expect("couldnt read source file");
     let tokens = lex(&contents).unwrap();
-    println!("tokens {:?}" ,tokens);
-
     let program = parse(tokens);
 
-    let bitcode = codgen::compile(program);
-    let (stdout, stderr, exit) = runner::run(bitcode);
-    println!("{}", stdout);
-    eprintln!("{}", stderr);
-    std::process::exit(exit)
+    let bitcode = codgen::compile(program, dump);
+    let (stdout, stderr, status) = runner::run(bitcode);
+    if stdout.len() != 0 {
+        print!("{}", stdout);
+    }
+    if stderr.len() != 0 {
+        eprint!("{}", stderr);
+    }
+    std::process::exit(status);
+    // let (stdout, stderr, exit) = runner::run(bitcode);
+    // println!("{}", stdout);
+    // eprintln!("{}", stderr);
+    // std::process::exit(exit)
 }

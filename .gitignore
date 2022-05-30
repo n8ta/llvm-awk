@@ -1,3 +1,4 @@
 .idea
-runtime/target
+runtime.ll
+runtime.s
 /target

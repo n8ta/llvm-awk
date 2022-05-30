@@ -7,9 +7,9 @@ use std::env::var;
 use std::path::Path;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
-use inkwell::execution_engine::{ExecutionEngine};
+use inkwell::execution_engine::{ExecutionEngine, JitFunction};
 use inkwell::module::{Linkage, Module};
-use inkwell::{IntPredicate};
+use inkwell::{IntPredicate, OptimizationLevel};
 use inkwell::basic_block::BasicBlock;
 use inkwell::memory_buffer::MemoryBuffer;
 use inkwell::types::{FloatType, IntType, StructType};
@@ -19,16 +19,18 @@ use crate::codgen::scopes::{ScopeInfo, Scopes};
 use crate::codgen::types::Types;
 use crate::parser::{Stmt, Program, PatternAction};
 
+const RUNTIME_BITCODE: &[u8] = std::include_bytes!("../../runtime.bc");
+
 /// Value type
 ///
 /// tag: u8   (0 is i64, 1 is f64)
 /// | number i64
 /// | number f64
 
-pub fn compile(prog: Program) -> MemoryBuffer {
+pub fn compile(prog: Program, dump: bool) -> MemoryBuffer {
     let context = Context::create();
     let mut codegen = CodeGen::new(&context);
-    codegen.compile(prog, &context)
+    codegen.compile(prog, &context, dump)
 }
 
 pub enum Value {
@@ -48,11 +50,18 @@ struct CodeGen<'ctx> {
     types: Types<'ctx>,
 }
 
+type RootFunc = unsafe extern "C" fn() -> i32;
+
 impl<'ctx> CodeGen<'ctx> {
     fn new(context: &'ctx Context) -> Self {
-        let module = context.create_module("sum");
-        let execution_engine = module.create_execution_engine().expect("To be able to create exec engine");
-        let types = Types::new(context, &module);
+        let runtime_bc = MemoryBuffer::create_from_memory_range_copy(RUNTIME_BITCODE, "llvm-awk-runtime");
+        let runtime_module = Module::parse_bitcode_from_buffer(&runtime_bc, &context).unwrap();
+
+        let module = context.create_module("llvm-awk");
+        module.link_in_module(runtime_module).expect("link runtime");
+        let execution_engine = module.create_jit_execution_engine(OptimizationLevel::Default).expect("To be able to create exec engine");
+        let types = Types::
+        new(context, &module);
         let codegen = CodeGen {
             module,
             builder: context.create_builder(),
@@ -87,7 +96,7 @@ impl<'ctx> CodeGen<'ctx> {
         self.counter += 1;
         format!("tmp{}", self.counter)
     }
-    fn compile(&mut self, prog: Program, context: &'ctx Context) -> MemoryBuffer {
+    fn compile(&mut self, prog: Program, context: &'ctx Context, dump: bool) -> MemoryBuffer {
         let i64_type = context.i64_type();
         let i64_func = i64_type.fn_type(&[], false);
         let function = self.module.add_function(ROOT, i64_func, Some(Linkage::External));
@@ -108,7 +117,7 @@ impl<'ctx> CodeGen<'ctx> {
         }
 
 
-        // If the last instruction isn't a return, add one and return 0.0.
+        // If the last instruction isn't a return, add one and return 0
         let zero = context.i64_type().const_int(0, false);
         match self.builder.get_insert_block().unwrap().get_last_instruction() {
             None => { self.builder.build_return(Some(&zero)); } // No instructions in the block
@@ -120,9 +129,16 @@ impl<'ctx> CodeGen<'ctx> {
             }
         };
 
-        println!("{}", self.module.print_to_string().to_string().replace("\\n", "\n"));
+        if dump {
+            println!("{}", self.module.print_to_string().to_string().replace("\\n", "\n"));
+        }
+        // unsafe {
+        //     println!("getting root func");
+        //     let root: JitFunction<RootFunc> = self.execution_engine.get_function(ROOT).unwrap();
+        //     println!("calling root func");
+        //     root.call();
+        // }
         self.module.write_bitcode_to_memory()
-        // unsafe { self.execution_engine.get_function(ROOT).ok() }.expect("to get root func")
     }
 
     fn compile_to_bool(&mut self, expr: &Expr, context: &'ctx Context) -> IntValue<'ctx> {
@@ -169,10 +185,9 @@ impl<'ctx> CodeGen<'ctx> {
         match stmt {
             Stmt::Expr(expr) => {self.compile_expr(expr, context);},
             Stmt::Print(expr) => {
-                println!("compile print!");
                 let result = self.compile_expr(expr, context);
                 let args = self.value_for_ffi(result);
-                self.builder.build_call(self.types.print, args.as_slice().into(), "print_value_call");
+                self.builder.build_call(self.types.print, &args, "print_value_call");
             }
             Stmt::Assign(name, expr) => {
                 let fin = self.compile_expr(expr, context);
@@ -217,7 +232,6 @@ impl<'ctx> CodeGen<'ctx> {
 
                 self.builder.position_at_end(continue_bb);
 
-                println!("then scope {:?} else scope {:?}", then_scope, else_scope);
                 self.build_phis(vec![(then_bb_final, then_scope), (else_bb_final, else_scope)], context);
 
                 return continue_bb;
@@ -363,20 +377,14 @@ impl<'ctx> CodeGen<'ctx> {
     fn build_phis(&mut self, predecessors: Vec<(BasicBlock<'ctx>, ScopeInfo<'ctx>)>, context: &'ctx Context) {
         let mut handled = HashSet::new();
         let mut variables = vec![];
-
         for pred in predecessors.iter() {
-            println!("pred....");
             for (name, _val) in pred.1.iter() {
                 variables.push(name.clone());
             }
         }
-
-        println!("VARS => {:?}", variables);
-
         if variables.len() == 0 {
             return;
         }
-
         for assigned_var in variables {
             if handled.contains(&assigned_var) { continue; }
             handled.insert(assigned_var.clone());
