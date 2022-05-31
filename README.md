@@ -10,6 +10,11 @@ An (INCOMPLETE) awk compiler backed by LLVM.
 cargo run test.awk data.txt
 ```
 
+## Requirements
+
+1. Clang++ installed and on the path
+2. `LLVM_SYS_130_PREFIX` is s
+
 ## Todo
 - Range patterns `pattern1, pattern2 { print $0 }` Matches from the first line matching pattern1 to the next line matching pattern 2
 - Regex patterns `/abc/ { print $0 }`
@@ -23,3 +28,5 @@ assigning to fields
 - If without else
 - break, continue, do while, next, exit, exit expression, `for var in array`, `for (expr; expr; expr) stmts`
 printf, print `expression-list`
+
+et to your llvm root [help!](https://n8ta.com/llvm/compilers/inkwell/rust/2022/05/28/llvm-for-inkwell-macos.html)

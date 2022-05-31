@@ -1,6 +1,6 @@
 #!/bin/sh
 set -e
-echo "Compiling runtime.c into runtime.bc which will be linked by main rust program"
+echo "Compiling runtime.c into runtime.bc which will be linked by main awk llvm module"
 echo "it is very hard to get rust to produce static binaries so I have been reduced to this"
 #export RUST_BACKTRACE=1
 #cargo run "$1"
