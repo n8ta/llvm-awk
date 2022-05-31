@@ -13,7 +13,7 @@ cargo run test.awk data.txt
 ## Requirements
 
 1. Clang++ installed and on the path
-2. `LLVM_SYS_130_PREFIX` is s
+2. `LLVM_SYS_130_PREFIX` is set to your llvm root [guide here](https://n8ta.com/llvm/compilers/inkwell/rust/2022/05/28/llvm-for-inkwell-macos.html)
 
 ## Todo
 - Range patterns `pattern1, pattern2 { print $0 }` Matches from the first line matching pattern1 to the next line matching pattern 2
@@ -29,4 +29,3 @@ assigning to fields
 - break, continue, do while, next, exit, exit expression, `for var in array`, `for (expr; expr; expr) stmts`
 printf, print `expression-list`
 
-et to your llvm root [help!](https://n8ta.com/llvm/compilers/inkwell/rust/2022/05/28/llvm-for-inkwell-macos.html)
