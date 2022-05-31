@@ -1,3 +1,0 @@
-/Users/n8ta/code/crawk/cmake-build-debug/CMakeFiles/runtime.o.dir
-/Users/n8ta/code/crawk/cmake-build-debug/CMakeFiles/edit_cache.dir
-/Users/n8ta/code/crawk/cmake-build-debug/CMakeFiles/rebuild_cache.dir
