@@ -1,4 +1,6 @@
 .idea
-runtime.ll
-runtime.s
+.DS_Store
+runtime/cmake-build-debug/
+runtime/runtime.ll
+runtime/runtime.s
 /target

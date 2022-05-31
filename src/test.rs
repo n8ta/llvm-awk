@@ -1,3 +1,4 @@
+use std::os::macos::raw::stat;
 use crate::{lex, parse};
 use crate::codgen::compile;
 use crate::runner::run;
@@ -10,10 +11,15 @@ fn run_it(program: &str, file: &str) -> (String, String,  i32) {
     run(compile(parse(lex(program).unwrap()), false))
 }
 fn test_it(program: &str, file: &str, output: &str, status_code: i32) {
-    let (stdout, stderr, status)  = run_it(program, file);
-    assert_eq!(stderr, format!(""));
+    let (stdout, stderr, status) = run_it(program, file);
+    if (status != status_code || (status == status_code && stdout != output)) {
+        eprintln!("test failed\n{}\n{}", program, file)
+    }
     assert_eq!(status, status_code);
-    assert_eq!(stdout, output);
+    if status_code == 0 {
+        assert_eq!(stderr, format!(""));
+        assert_eq!(stdout, output);
+    }
 }
 
 #[test]
@@ -25,6 +31,10 @@ fn test_e2e() {
     test_it("{x = 0; print x;}", ONE_LINE, "0\n", 0);
     test_it("{x = 0; if (1) { x = 1 } else { x = 2.2 }; print x }", ONE_LINE, "2.2\n", 0);
     test_it("{x = 0; if (1) { if (1) { x = 1 } else { x = 2.2 } } else { if (1) { x = 1 } else { x = 4.2 } }; print x }", ONE_LINE, "4.2\n", 0);
+    test_it("{print 1 + 1.1}", ONE_LINE, "", 255);
+    test_it("{print 1.1 + 1}", ONE_LINE, "", 255);
+    test_it("{print (1.1 + 3.3) + 1}", ONE_LINE, "", 255);
+    test_it("{print (1.0 + 2.0)}", ONE_LINE, "3\n", 0);
 }
 
 

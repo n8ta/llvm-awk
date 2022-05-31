@@ -14,10 +14,10 @@ impl<'ctx> Types<'ctx> {
     pub fn new(context: &'ctx inkwell::context::Context, runtime_mod: &Module<'ctx>) -> Types<'ctx> {
         let i8 = context.i8_type();
         let i64 = context.i64_type();
-        let print = runtime_mod.get_function("print_value").unwrap();
-        let to_bool= runtime_mod.get_function("to_bool_i64").unwrap();
-        let mismatch = runtime_mod.get_function("print_mismatch").unwrap();
-        let get_float = runtime_mod.get_function("get_float").unwrap();
+        let print = runtime_mod.get_function("print_value").expect("to find print_value function in lib");
+        let to_bool= runtime_mod.get_function("to_bool_i64").expect("to find to_bool_i64 function in lib");
+        let mismatch = runtime_mod.get_function("print_mismatch").expect("to find print_mismatch function in lib");
+        let get_float = runtime_mod.get_function("get_float").expect("to find get_float function in lib");
         let value = context.struct_type(&[i8.into(), i64.into()], false);
 
         Types {
