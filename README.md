@@ -1,13 +1,13 @@
+## What is it?
+An (INCOMPLETE) awk compiler backed by LLVM.
+
+## How to use
 
 ```shell
-# produces /tmp/crawk.bc llvm bitcode from awk input
-cargo run test.awk 
-
-# bitcode -> native assembly
-/Users/n8ta/llvm-13/bin/llc /tmp/crawk.bc -o crawk.s
-
-# link rust based dynamic lib with my print function with assembly
-clang crawk.s runtime/target/release/libruntime.dylib
+## Build the runtime.cpp library which will be linked with your awk program
+./run.sh 
+## Run your awk program from a file
+cargo run test.awk data.txt
 ```
 
 ## Todo
@@ -23,4 +23,3 @@ assigning to fields
 - If without else
 - break, continue, do while, next, exit, exit expression, `for var in array`, `for (expr; expr; expr) stmts`
 printf, print `expression-list`
-  - 

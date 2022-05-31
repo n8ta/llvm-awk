@@ -4,7 +4,7 @@
 #include <vector>
 #include <fstream>
 
-#define DEBUG 1
+//#define DEBUG 1
 
 #ifdef DEBUG
 #define PRINT(...) do{ fprintf( stderr, __VA_ARGS__ ); } while( false )

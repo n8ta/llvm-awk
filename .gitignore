@@ -1,4 +1,5 @@
 .idea
+rutime.bc
 a.out
 *.s
 */*.s
