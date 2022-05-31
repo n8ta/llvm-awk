@@ -13,4 +13,5 @@ echo "it is very hard to get rust to produce static binaries so I have been redu
 #
 ## clang -S -emit-llvm runtime.c -static -o runtime.bc
 ## clang -emit-llvm -c runtime.c -static -o runtime.bc
-clang -emit-llvm -c runtime/runtime.cpp -static -o runtime.bc
+#clang++ -emit-llvm -static -c runtime/runtime.cpp -o runtime.bc
+clang++ -emit-llvm -c -static runtime/runtime.cpp -o runtime.bc

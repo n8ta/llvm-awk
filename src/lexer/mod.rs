@@ -327,3 +327,15 @@ fn test_ident() {
     let str = "{ x }";
     assert_eq!(lex(str).unwrap(), vec![Token::LeftBrace, Token::Ident("x".to_string()), Token::RightBrace, Token::EOF]);
 }
+
+#[test]
+fn test_string() {
+    let str = "{ \"x\" }";
+    assert_eq!(lex(str).unwrap(), vec![Token::LeftBrace, Token::String("x".to_string()), Token::RightBrace, Token::EOF]);
+}
+
+#[test]
+fn test_string_2() {
+    let str = "{ \"abc123 444\" }";
+    assert_eq!(lex(str).unwrap(), vec![Token::LeftBrace, Token::String("abc123 444".to_string()), Token::RightBrace, Token::EOF]);
+}

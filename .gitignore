@@ -1,4 +1,11 @@
 .idea
+a.out
+*.s
+*/*.s
+*.bc
+*/*.bc
+*.o
+*/*.o
 cmake-build-debug
 .DS_Store
 runtime/cmake-build-debug/

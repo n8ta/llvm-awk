@@ -1,14 +1,20 @@
-use std::os::macos::raw::stat;
+use std::io::Write;
+use tempfile::{tempdir, tempfile};
 use crate::{lex, parse};
 use crate::codgen::compile;
-use crate::runner::run;
+use crate::runner::{run, run_and_capture};
 
 const ONE_LINE: &'static str = "1 2 3\n";
 const NUMBERS: &'static str = "1 2 3\n4 5 6\n7 8 9";
 const FLOAT_NUMBERS: &'static str = "1.1 2.2 3.3\n4.4 5.5 6.6\n7.7 8.8 9.9";
 
 fn run_it(program: &str, file: &str) -> (String, String,  i32) {
-    run(compile(parse(lex(program).unwrap()), false))
+    let mut temp_dir = tempdir().unwrap();
+    let temp_path = temp_dir.path().join("temp_file");
+    std::fs::write(&temp_path, file.as_bytes()).unwrap();
+
+    let temp_path_str = temp_path.to_str().unwrap().to_string();
+    run_and_capture(compile(parse(lex(program).unwrap()), &[temp_path_str] , false))
 }
 fn test_it(program: &str, file: &str, output: &str, status_code: i32) {
     let (stdout, stderr, status) = run_it(program, file);
@@ -37,4 +43,9 @@ fn test_e2e() {
     test_it("{print (1.0 + 2.0)}", ONE_LINE, "3\n", 0);
 }
 
+
+#[test]
+fn test_print_columns() {
+    test_it("{print $1; print $2; print $3; print $0}", ONE_LINE, "1\n2\n3\n1 2 3\n", 0);
+}
 

@@ -1,5 +1,5 @@
 {
-x = 0;
-if (1) { x = 1 } else { x = 2.2 };
-print x
+print $1;
+print $2;
+print $3;
 }

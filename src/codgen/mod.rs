@@ -13,13 +13,11 @@ use inkwell::{IntPredicate, OptimizationLevel};
 use inkwell::basic_block::BasicBlock;
 use inkwell::memory_buffer::MemoryBuffer;
 use inkwell::types::{FloatType, IntType, StructType};
-use inkwell::values::{AggregateValue, AnyValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FloatValue, FunctionValue, InstructionOpcode, IntValue, StructValue};
+use inkwell::values::{AggregateValue, AnyValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FloatValue, FunctionValue, InstructionOpcode, IntValue, PointerValue, StructValue};
 use crate::{BinOp, Expr};
 use crate::codgen::scopes::{ScopeInfo, Scopes};
-use crate::codgen::types::Types;
+use crate::codgen::types::{pad, Types};
 use crate::parser::{Stmt, Program, PatternAction};
-
-const RUNTIME_BITCODE: &[u8] = std::include_bytes!("../../runtime.bc");
 
 /// Value type
 ///
@@ -27,10 +25,10 @@ const RUNTIME_BITCODE: &[u8] = std::include_bytes!("../../runtime.bc");
 /// | number i64
 /// | number f64
 
-pub fn compile(prog: Program, dump: bool) -> MemoryBuffer {
+pub fn compile(prog: Program, files: &[String], dump: bool) -> MemoryBuffer {
     let context = Context::create();
     let mut codegen = CodeGen::new(&context);
-    codegen.compile(prog, &context, dump)
+    codegen.compile(prog, &context, files, dump)
 }
 
 pub enum Value {
@@ -54,14 +52,9 @@ type RootFunc = unsafe extern "C" fn() -> i32;
 
 impl<'ctx> CodeGen<'ctx> {
     fn new(context: &'ctx Context) -> Self {
-        let runtime_bc = MemoryBuffer::create_from_memory_range_copy(RUNTIME_BITCODE, "llvm-awk-runtime");
-        let runtime_module = Module::parse_bitcode_from_buffer(&runtime_bc, &context).unwrap();
-
         let module = context.create_module("llvm-awk");
-        module.link_in_module(runtime_module).expect("link runtime");
         let execution_engine = module.create_jit_execution_engine(OptimizationLevel::Default).expect("To be able to create exec engine");
-        let types = Types::
-        new(context, &module);
+        let types = Types::new(context, &module);
         let codegen = CodeGen {
             module,
             builder: context.create_builder(),
@@ -96,27 +89,54 @@ impl<'ctx> CodeGen<'ctx> {
         self.counter += 1;
         format!("tmp{}", self.counter)
     }
-    fn compile(&mut self, prog: Program, context: &'ctx Context, dump: bool) -> MemoryBuffer {
+    fn compile(&mut self, prog: Program, context: &'ctx Context, files: &[String], dump: bool) -> MemoryBuffer {
         let i64_type = context.i64_type();
         let i64_func = i64_type.fn_type(&[], false);
         let function = self.module.add_function(ROOT, i64_func, Some(Linkage::External));
-        let bb = context.append_basic_block(function, ROOT);
-        self.builder.position_at_end(bb);
+        let begin_bb = context.append_basic_block(function, "begin_bb");
+        let end_bb = context.append_basic_block(function, "end_bb");
+        let body_get_line_bb = context.append_basic_block(function, "body_get_line_bb");
 
+
+        self.builder.position_at_end(begin_bb);
+        for path in files.iter().rev() {
+            let mut path = path.to_string();
+            pad(&mut path);
+            let const_str = context.const_string(path.as_bytes(), true);
+            let malloced_array = self.builder.build_alloca(const_str.get_type(), "file_path string alloc");
+            self.builder.build_store(malloced_array, const_str);
+            self.builder.build_call(self.types.add_file, &[malloced_array.into()], "add file");
+        }
+        self.builder.build_call(self.types.init, &[], "done adding files call init!");
 
         for begin in prog.begins.iter() {
             self.compile_stmt(begin, context);
         }
+        self.builder.build_unconditional_branch(body_get_line_bb);
 
+        self.builder.position_at_end(body_get_line_bb);
+
+        let has_next_line = self.builder.build_call(self.types.next_line, &[] ,"get_next_line").as_any_value_enum().into_int_value();
+        let one_i64 = context.i64_type().const_int(1, false);
+        let has_next_line = self.builder.build_int_compare(IntPredicate::EQ, has_next_line, one_i64, "has_next_line?");
+        let mut start = context.append_basic_block(function, "first_body");
+
+        self.builder.build_conditional_branch(has_next_line, start, end_bb);
+
+        self.builder.position_at_end(start);
         for pa in prog.pattern_actions.iter() {
-            self.compile_pattern_action(pa, context);
+            start = self.compile_pattern_action(pa, context);
+            self.builder.position_at_end(start);
         }
+        self.builder.build_unconditional_branch(body_get_line_bb);
 
+        self.builder.position_at_end(end_bb);
+        let mut final_bb = end_bb;
         for end in prog.ends.iter() {
-            self.compile_stmt(end, context);
+            final_bb = self.compile_stmt(end, context);
         }
 
-
+        self.builder.position_at_end(final_bb);
         // If the last instruction isn't a return, add one and return 0
         let zero = context.i64_type().const_int(0, false);
         match self.builder.get_insert_block().unwrap().get_last_instruction() {
@@ -150,7 +170,7 @@ impl<'ctx> CodeGen<'ctx> {
             "to_bool_i64").as_any_value_enum().into_int_value()
     }
 
-    fn compile_pattern_action(&mut self, pa: &PatternAction, context: &'ctx Context) {
+    fn compile_pattern_action(&mut self, pa: &PatternAction, context: &'ctx Context) -> BasicBlock<'ctx> {
         if let Some(test) = &pa.pattern {
             let action_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "action_bb");
             let continue_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "continue_bb");
@@ -170,8 +190,9 @@ impl<'ctx> CodeGen<'ctx> {
 
             self.builder.position_at_end(continue_bb);
             self.build_phis(vec![(action_bb_final, action_bb_scope)], context);
+            continue_bb
         } else {
-            self.compile_stmt(&pa.action, context);
+            self.compile_stmt(&pa.action, context)
         }
     }
 
@@ -242,12 +263,12 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn cast_float_to_int(&self, float: FloatValue<'ctx>, context: &'ctx Context) -> IntValue<'ctx> {
         self.builder.build_bitcast::<IntType, FloatValue>(
-            float, context.i64_type(), "cast-to-int").into_int_value()
+            float, context.i64_type(), "cast-float-to-int").into_int_value()
     }
 
     fn cast_int_to_float(&self, int: IntValue<'ctx>, context: &'ctx Context) -> FloatValue<'ctx> {
         self.builder.build_bitcast::<FloatType, IntValue>(
-            int, context.f64_type().into(), "cast-to-float").into_float_value()
+            int, context.f64_type().into(), "cast-int-to-float").into_float_value()
     }
 
 
@@ -368,7 +389,15 @@ impl<'ctx> CodeGen<'ctx> {
                 phi.as_basic_value().into_struct_value()
             }
             Expr::Column(expr) => {
-                self.compile_expr(expr, context)
+                let res = self.compile_expr(expr, context);
+                let tag = self.builder.build_extract_value(res, 0, "tag for col").unwrap().into_int_value();
+                let val = self.builder.build_extract_value(res, 1, "value for col").unwrap().into_int_value();
+                let int_ptr = self.builder.build_call(self.types.column, &[tag.into(), val.into()], "get_column").as_any_value_enum().into_int_value();
+
+                let two_i8 = context.i8_type().const_int(2, false);
+                let any_int = context.i64_type().const_int(1, false);
+                let result = self.types.value.const_named_struct(&[two_i8.into(), any_int.into()]);
+                self.builder.build_insert_value(result, int_ptr, 1, "column-str-val").unwrap().into_struct_value()
             }
             Expr::LogicalOp(_, _, _) => { panic!("logic not done yet") }
         }

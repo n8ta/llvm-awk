@@ -17,7 +17,7 @@ fn main() {
     let path = if let Some(path) = args.get(1) {
         path
     } else {
-        println!("Usage: ./crawk something.awk input.txt`");
+        println!("Usage: ./crawk something.awk input1.txt input2.txt`");
         exit(-1);
     };
 
@@ -29,20 +29,17 @@ fn main() {
         }
     };
 
+    let files: Vec<String> = args[2..].iter().filter(|arg| **arg != "--dump").cloned().collect();
+    println!("files {:?}", files);
+
     let mut contents: String = String::new();
     file.read_to_string(&mut contents).expect("couldnt read source file");
     let tokens = lex(&contents).unwrap();
     let program = parse(tokens);
 
-    let bitcode = codgen::compile(program, dump);
-    let (stdout, stderr, status) = runner::run(bitcode);
-    if stdout.len() != 0 {
-        print!("{}", stdout);
-    }
-    if stderr.len() != 0 {
-        eprint!("{}", stderr);
-    }
-    std::process::exit(status);
+    let bitcode = codgen::compile(program, files.as_slice(), dump);
+    run(bitcode);
+    // std::process::exit(status);
     // let (stdout, stderr, exit) = runner::run(bitcode);
     // println!("{}", stdout);
     // eprintln!("{}", stderr);
