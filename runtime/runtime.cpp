@@ -4,8 +4,6 @@
 #include <vector>
 #include <fstream>
 
-//#define DEBUG 1
-
 #ifdef DEBUG
 #define PRINT(...) do{ fprintf( stderr, __VA_ARGS__ ); } while( false )
 #else
@@ -15,21 +13,37 @@
 union Value {
   double float_value;
   int64_t int_value;
-  std::string *str_value;
+  char* str_value;
 };
 
 static char FS = ' ';
 static char RS = '\n';
 
-struct CustomString {
-  size_t count;
-  char *data;
-};
-
 static std::string full_line;
 static std::vector<std::string> fields;
 static std::vector<std::string> files;
 static std::ifstream current_file;
+
+// Returns a malloc'ed C style null terminated string to be passed across
+// ffi to llvm program. llvm program is responsible for calling free_string
+// when it is done with it.
+char* owned_string(std::string data) {
+  size_t allocation_size = data.length()+1;
+  char* pointer_to_existing = (char*) data.c_str();
+  char* new_string = (char*) malloc(allocation_size);
+  memcpy(new_string, pointer_to_existing, allocation_size);
+  return new_string;
+}
+
+// Frees a string created by owned_string
+extern "C" void free_string(char tag, int64_t value) {
+  PRINT("Free string called tag:%d value:%lld", tag, value);
+  if (tag == 2) {
+    free((void*) value);
+  } else {
+    printf("\tCOMPILER BUG tried to free a non-string value!");
+  }
+}
 
 extern "C" void add_file(void *path) {
   char *path_str = (char *) path;
@@ -105,23 +119,26 @@ extern "C" int64_t next_line() {
   return 1;
 }
 
+// Returns a pointer to a c_string that the caller now is responsible for
+// freeing or 0 if column is too large.
 extern "C" int64_t column(char tag, int64_t value) {
   PRINT("column call tag %d value %lld\n", tag, value);
   if (tag == 0) {
     if (value - 1 >= fields.size()) {
-      PRINT("\tcolumn to large ret 0\n");
-      return 0; //empty string is repr by 0
+      PRINT("\tcolumn to large ret empty string\n");
+      std::string empty = "";
+      return (int64_t) owned_string(empty); //empty string is repr by 0
     }
     if (value == 0) {
       PRINT("\tcolumn == 0 return full line\n");
-      return (int64_t) ((void *) &full_line);
+      return (int64_t) owned_string(full_line);
     }
-    int64_t int_value = (int64_t) ((void *) &fields.at(value-1));
+    int64_t int_value = (int64_t) owned_string(fields.at(value-1));
     PRINT("\tcolumn normal return fields[col-1] %s int: %lld\n", fields.at(value-1).c_str(), int_value);
     return int_value;
   } else {
-    printf("Cannot get column from tag %d returning $0\n", tag);
-    return (int64_t) ((void *) &full_line);
+    printf("\tCannot get column from tag %d returning $0\n", tag);
+    return (int64_t) owned_string(full_line);
   }
 }
 
@@ -135,11 +152,12 @@ extern "C" void print_value(char tag, int64_t value) {
   } else if (tag == 1) {
     printf("%g\n", (double) val.float_value);
   } else if (tag == 2) {
-    printf("%s\n", val.str_value->c_str());
+    printf("%s\n", val.str_value);
   }
 }
 
 
+// 0 is TRUE, but only here. Sorry about that...
 extern "C" long int to_bool_i64(char tag, int64_t value) {
   union Value val;
   val.int_value = value;
@@ -148,6 +166,9 @@ extern "C" long int to_bool_i64(char tag, int64_t value) {
     return val.int_value == 0 ? 0 : 1;
   } else if (tag == 1) {
     return val.float_value == 0.0 ? 0 : 1;
+  } else if (tag == 2) {
+    PRINT("\tstring is %s", val.str_value);
+    return strlen(val.str_value) == 0 ? 1 : 0;
   }
   return 1;
 }
@@ -156,6 +177,7 @@ extern "C" void print_mismatch() {
   printf("integer float mismatch\n");
 }
 
+// something llvm will probably not optimize out. Handy at times to see full IR.
 extern "C" double get_float() {
   return 2.2;
 }

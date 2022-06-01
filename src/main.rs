@@ -19,7 +19,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let args = match AwkArgs::new(args) {
         Ok(args) => args,
-        Err() => return,
+        Err(err) => return,
     };
     let program = match args.program.load() {
         Ok(program) => program,
