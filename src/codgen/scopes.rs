@@ -19,6 +19,7 @@ impl<'ctx> Scopes<'ctx> {
     pub fn insert(&mut self, name: String, value: StructValue<'ctx>) {
         self.scopes.last_mut().unwrap().values.insert(name, value);
     }
+    #[allow(dead_code)]
     pub fn get(&self, name: &str) -> Option<&StructValue<'ctx>> {
         for scope in self.scopes.iter().rev() {
             if let Some(val) = scope.values.get(name) {

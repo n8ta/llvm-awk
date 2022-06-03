@@ -4,6 +4,8 @@
 #include <vector>
 #include <fstream>
 
+//#define DEBUG 1
+
 #ifdef DEBUG
 #define PRINT(...) do{ fprintf( stderr, __VA_ARGS__ ); } while( false )
 #else
@@ -41,7 +43,7 @@ extern "C" void free_string(char tag, int64_t value) {
   if (tag == 2) {
     free((void*) value);
   } else {
-    printf("\tCOMPILER BUG tried to free a non-string value!");
+    printf("\tllawk compiler bug: tried to free a non-string value!");
   }
 }
 
@@ -124,14 +126,14 @@ extern "C" int64_t next_line() {
 extern "C" int64_t column(char tag, int64_t value) {
   PRINT("column call tag %d value %lld\n", tag, value);
   if (tag == 0) {
-    if (value - 1 >= fields.size()) {
-      PRINT("\tcolumn to large ret empty string\n");
-      std::string empty = "";
-      return (int64_t) owned_string(empty); //empty string is repr by 0
-    }
     if (value == 0) {
       PRINT("\tcolumn == 0 return full line\n");
       return (int64_t) owned_string(full_line);
+    }
+    if (value - 1 >= fields.size()) {
+      PRINT("\tcolumn too large ret empty string\n");
+      std::string empty = "";
+      return (int64_t) owned_string(empty); //empty string is repr by 0
     }
     int64_t int_value = (int64_t) owned_string(fields.at(value-1));
     PRINT("\tcolumn normal return fields[col-1] %s int: %lld\n", fields.at(value-1).c_str(), int_value);
@@ -148,10 +150,13 @@ extern "C" void print_value(char tag, int64_t value) {
   val.int_value = value;
   PRINT("Print value called tag %c value %lld\n", tag, value);
   if (tag == 0) {
+    PRINT("\t Tag is == 0 %lld\n", val.int_value);
     printf("%lld\n", val.int_value);
   } else if (tag == 1) {
+    PRINT("\t Tag is == 1\n");
     printf("%g\n", (double) val.float_value);
   } else if (tag == 2) {
+    PRINT("\t Tag is == 2\n");
     printf("%s\n", val.str_value);
   }
 }

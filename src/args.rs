@@ -37,7 +37,7 @@ impl AwkArgs {
         let mut files: Vec<String> = vec![];
 
         let mut i = 1;
-        while (i < args.len()) {
+        while i < args.len() {
             match &args[i][..] {
                 "--dump" => {
                     dump = true;
@@ -78,7 +78,6 @@ impl AwkArgs {
             }
             Some(prog) => prog
         };
-        let mut final_args = AwkArgs { dump, program, files };
-        Ok(final_args)
+        Ok(AwkArgs { dump, program, files })
     }
 }

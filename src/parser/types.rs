@@ -9,6 +9,7 @@ pub enum Stmt {
     Return(Option<Expr>),
     Group(Vec<Stmt>),
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
+    While(Expr, Box<Stmt>)
 }
 
 #[derive(Debug, PartialEq)]
@@ -34,11 +35,13 @@ pub enum Expr {
     LogicalOp(Box<Expr>, LogicalOp, Box<Expr>),
     Variable(String),
     Column(Box<Expr>),
+    Call,
 }
 
 impl Display for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
+            Expr::Call => write!(f, "call"),
             Expr::Variable(n) => write!(f, "var {}", n),
             Expr::String(str) => write!(f, "\"{}\"", str),
             Expr::NumberF64(n) => write!(f, "{}", n),
@@ -59,5 +62,6 @@ pub struct Program {
 
 impl Program {
     pub fn new(begins: Vec<Stmt>, ends: Vec<Stmt>, pattern_actions: Vec<PatternAction>) -> Program { Program { begins, ends, pattern_actions } }
+    #[allow(dead_code)]
     pub fn new_action_only(stmt: Stmt) -> Program { Program { begins: vec![], ends: vec![], pattern_actions: vec![PatternAction::new_action_only(stmt)] } }
 }

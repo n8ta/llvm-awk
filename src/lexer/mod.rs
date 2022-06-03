@@ -1,7 +1,6 @@
 mod types;
 
 pub use types::{Token, TokenType, BinOp, LogicalOp};
-use crate::Expr;
 
 pub fn lex(str: &str) -> LexerResult {
     let mut lexer = Lexer::new(str);
@@ -82,6 +81,7 @@ impl<'a> Lexer<'a> {
             }
         }
     }
+    #[allow(dead_code)]
     fn number_usize(&mut self, skip: usize) -> Result<usize, String> {
         while self.peek().is_digit(10) { self.advance(); }
         let num = self.src.chars().skip(self.start + skip).take(self.current - (self.start + skip)).collect::<String>();

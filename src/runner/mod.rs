@@ -1,14 +1,8 @@
-use std::arch::asm;
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use inkwell::memory_buffer::MemoryBuffer;
 use std::fs::File;
-use std::io::{self, Write};
-use std::thread::sleep;
-use std::time::Duration;
-use inkwell::context::Context;
-use inkwell::module::Module;
-use inkwell::object_file::ObjectFile;
-use tempfile::{tempdir, TempDir, TempPath};
+use std::io::{Write};
+use tempfile::{tempdir, TempDir};
 
 const RUNTIME_BITCODE: &[u8] = std::include_bytes!("../../runtime.bc");
 
@@ -42,10 +36,9 @@ pub fn run_and_capture(bitcode: MemoryBuffer) -> (String, String, i32) {
 }
 
 pub fn external_tools(temp_dir: &TempDir, bitcode: MemoryBuffer) -> Result<PathBuf, (String, String, i32)> {
-    println!("external tools");
-    let mut program_bc_path = temp_dir.path().join("awk.bc");
-    let mut runtime_bc_path = temp_dir.path().join("runtime.bc");
-    let mut out_path = temp_dir.path().join("a.out");
+    let program_bc_path = temp_dir.path().join("awk.bc");
+    let runtime_bc_path = temp_dir.path().join("runtime.bc");
+    let out_path = temp_dir.path().join("a.out");
 
 
     {

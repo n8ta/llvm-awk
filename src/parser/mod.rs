@@ -22,10 +22,6 @@ struct Parser {
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Parser {
-        Parser { tokens, current: 0 }
-    }
-
     fn parse(&mut self) -> Program {
         let mut begin = vec![];
         let mut end = vec![];
