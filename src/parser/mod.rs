@@ -399,3 +399,12 @@ fn test_column() {
     let pa = PatternAction::new(Some(pattern), body);
     assert_eq!(actual, Program::new(vec![], vec![], vec![pa]));
 }
+
+#[test]
+fn test_while_l00p() {
+    use crate::lexer::lex;
+    let str = "{ while (123) { print 1; } }";
+    let actual = parse(lex(str).unwrap());
+    let body = Stmt::While(Expr::NumberF64(123.0), Box::new(Stmt::Print(Expr::NumberF64(1.0))));
+    assert_eq!(actual, Program::new(vec![], vec![], vec![PatternAction::new_action_only(body)]));
+}

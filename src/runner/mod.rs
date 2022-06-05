@@ -64,7 +64,7 @@ pub fn external_tools(temp_dir: &TempDir, bitcode: MemoryBuffer) -> Result<PathB
             let mut path = PathBuf::from(val);
             path.push("bin");
             path.push("llc");
-            let mut res = std::process::Command::new(path.to_str().unwrap())
+            let res = std::process::Command::new(path.to_str().unwrap())
                 .args(vec![program_bc_path.to_str().unwrap()])
                 .output().unwrap();
             println!("{}", String::from_utf8(res.stdout).unwrap());

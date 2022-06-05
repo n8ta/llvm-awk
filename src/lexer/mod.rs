@@ -104,6 +104,12 @@ impl<'a> Lexer<'a> {
             self.add_token(Token::Else);
         } else if src == "begin" {
             self.add_token(Token::Begin);
+        } else if src == "for" {
+            self.add_token(Token::For);
+        } else if src == "while" {
+            self.add_token(Token::While);
+        } else if src == "do" {
+            self.add_token(Token::Do);
         } else if src == "end" {
             self.add_token(Token::End);
         } else if src == "print" {
@@ -330,4 +336,23 @@ fn test_string() {
 fn test_string_2() {
     let str = "{ \"abc123 444\" }";
     assert_eq!(lex(str).unwrap(), vec![Token::LeftBrace, Token::String("abc123 444".to_string()), Token::RightBrace, Token::EOF]);
+}
+
+#[test]
+fn test_lex_while_l00p() {
+    let str = " while ( x ) { }";
+    assert_eq!(lex(str).unwrap(), vec![Token::While, Token::LeftParen, Token::Ident(format!("x")), Token::RightParen, Token::LeftBrace, Token::RightBrace, Token::EOF]);
+}
+
+#[test]
+fn test_lex_do_while_l00p() {
+    let str = " do print 1 while (132)";
+    assert_eq!(lex(str).unwrap(), vec![Token::Do, Token::Print, Token::NumberF64(1.0), Token::While, Token::LeftParen, Token::NumberF64(132.0), Token::RightParen, Token::EOF]);
+}
+
+#[test]
+fn test_lex_for_l00p() {
+    let str = "for (a = 0;";
+    let a = Token::Ident(format!("a"));
+    assert_eq!(lex(str).unwrap(), vec![Token::For, Token::LeftParen, a.clone(), Token::Eq, Token::NumberF64(0.0), Token::Semicolon, Token::EOF]);
 }

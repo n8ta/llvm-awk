@@ -70,6 +70,9 @@ pub enum Token {
     Begin,
     End,
     Else,
+    While,
+    For,
+    Do,
 }
 
 #[derive(Debug, Clone, PartialOrd, PartialEq, Hash, Eq, Ord)]
@@ -106,6 +109,9 @@ pub enum TokenType {
     Begin,
     End,
     Else,
+    For,
+    While,
+    Do,
 }
 
 impl Token {
@@ -152,6 +158,9 @@ impl Token {
             Token::End => TokenType::End,
             Token::Begin => TokenType::Begin,
             Token::Ident(_) => TokenType::Ident,
+            Token::While => TokenType::While,
+            Token::For => TokenType::For,
+            Token::Do => TokenType::Do,
         }
     }
 }
@@ -159,6 +168,7 @@ impl Token {
 impl TokenType {
     pub fn name(token_type: TokenType) -> &'static str {
         match token_type {
+            TokenType::While => "While",
             TokenType::Minus => "Minus",
             TokenType::Plus => "Plus",
             TokenType::Slash => "Slash",
@@ -191,6 +201,8 @@ impl TokenType {
             TokenType::Begin => "Begin",
             TokenType::End => "End",
             TokenType::Ident => "Ident",
+            TokenType::For => "For",
+            TokenType::Do => "Do",
         }
     }
 }
