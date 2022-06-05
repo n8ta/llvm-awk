@@ -88,7 +88,10 @@ int next_file() {
 extern "C" int64_t next_line() {
   fields.clear();
   PRINT("Next line called\n");
-  std::getline(current_file, full_line, RS);
+  if (!std::getline(current_file, full_line, RS)) {
+    PRINT("\tGet line failed. Continuing as if current line empty\n");
+    full_line.clear();
+  }
   PRINT("\tDone calling first getline %s\n", full_line.c_str());
 //  getline(current_file, full_line, RS);
   if (full_line.length() == 0) {
