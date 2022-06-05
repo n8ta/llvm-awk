@@ -43,8 +43,8 @@ impl<'ctx> Types<'ctx> {
         let get_float_type = f64.fn_type(&[], false);
         let next_line_type = context.i64_type().fn_type(&[], false);
         let column_type = context.f64_type().fn_type(&[i8.into(), f64.into()], false);
-        let mut message = String::new(); // to satisfy llvm types just pass everything as a 1000 long vector
-        for _i in 0..1000 {
+        let mut message = String::new(); // to satisfy llvm types just pass everything as a 200 long vector
+        for _i in 0..200 {
             message.push('1');
         }
         let const_str = context.const_string(message.as_bytes(), true);
@@ -76,8 +76,8 @@ impl<'ctx> Types<'ctx> {
 }
 
 pub fn pad(path: &mut String) {
-    if path.as_bytes().len() > 1000 { panic!("file path is too long {}", path)}
-    while path.len() < 1000 {
+    if path.as_bytes().len() > 200 { panic!("file path is too long {}", path)}
+    while path.len() < 200 {
         path.push('\0');
     }
 }

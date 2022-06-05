@@ -118,8 +118,8 @@ impl<'ctx> CodeGen<'ctx> {
     }
 
     fn create_value(&mut self, value: Value, context: &'ctx Context) -> ValueT<'ctx> {
-        let zero_i8 = context.i8_type().const_int(0, false);
-        let two_i8 = context.i8_type().const_int(2, false);
+        let zero_i8 = context.i8_type().const_int(FLOAT_TAG as u64, false);
+        let two_i8 = context.i8_type().const_int(CONST_STRING_TAG as u64, false);
         match value {
             Value::Float(num) => {
                 (zero_i8, context.f64_type().const_float(num))
@@ -151,7 +151,7 @@ impl<'ctx> CodeGen<'ctx> {
         let value_is_zero_f64 = self.builder.build_float_compare(FloatPredicate::OEQ, value, context.f64_type().const_float(0.0), "value_is_zero_f64");
         let zero_f64 = self.builder.build_and(value_is_zero_f64, tag_is_zero, "zero_f64");
         // TODO: string truthyness
-        self.builder.build_not(zero_f64, "not_zero_is_truthy")
+        self.builder.build_not(zero_f64, "predicate")
     }
 
     fn value_for_ffi(&self, result: ValueT<'ctx>) -> Vec<BasicMetadataValueEnum<'ctx>> {
@@ -161,14 +161,14 @@ impl<'ctx> CodeGen<'ctx> {
     fn compile_stmt(&mut self, stmt: &Stmt, context: &'ctx Context) -> BasicBlock<'ctx> {
         match stmt {
             Stmt::While(test, body) => {
-                // pred -> test_block
-                // test_block -> passes, continue
-                // while_body -> while_body_final
-                // while_body_final -> test_block
+                // INIT -> while_test
+                // while_test -> while_body, while_continue
+                // while_body -> while_test
+                // while_continue -> END
                 let root = self.module.get_function(ROOT).expect("root to exist");
 
                 let pred = self.builder.get_insert_block().unwrap();
-                let while_test_bb = context.append_basic_block(root, "while_test_block");
+                let while_test_bb = context.append_basic_block(root, "while_test");
                 let while_body_bb = context.append_basic_block(root, "while_body");
                 let continue_bb = context.append_basic_block(root, "while_continue");
 
@@ -183,8 +183,15 @@ impl<'ctx> CodeGen<'ctx> {
                 let while_body_scope = self.scopes.end_scope();
                 self.builder.build_unconditional_branch(while_test_bb);
 
-                self.builder.position_at_end(continue_bb);
+                if let Some(inst) = while_test_bb.get_first_instruction() {
+                    self.builder.position_before(&inst)
+                } else {
+                    self.builder.position_at_end(while_test_bb);
+                }
                 self.build_phis(vec![(pred, ScopeInfo::new()), (while_body_final_bb, while_body_scope)], context);
+
+
+                self.builder.position_at_end(continue_bb);
                 return continue_bb;
             }
             Stmt::Expr(expr) => { self.compile_expr(expr, context); }
@@ -243,7 +250,7 @@ impl<'ctx> CodeGen<'ctx> {
 
                     return continue_bb;
                 } else {
-                    let init_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "init");
+                    let init_bb = self.builder.get_insert_block().unwrap();
                     let then_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "then");
                     let continue_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "continue");
 
@@ -330,8 +337,8 @@ impl<'ctx> CodeGen<'ctx> {
             if handled.contains(&assigned_var) { continue; }
             handled.insert(assigned_var.clone());
             if let Some(existing_defn) = self.scopes.lookup(&assigned_var) {
-                let phi_tag = self.builder.build_phi(context.i8_type(), &format!("phi_for_{}_tag", assigned_var));
-                let phi_value = self.builder.build_phi(context.f64_type(), &format!("phi_for_{}_value", assigned_var));
+                let phi_tag = self.builder.build_phi(context.i8_type(), &format!("phi_{}_tag", assigned_var));
+                let phi_value = self.builder.build_phi(context.f64_type(), &format!("phi_{}_value", assigned_var));
 
                 // let mut incoming_tag_vals = vec![];
                 let mut incoming = vec![];

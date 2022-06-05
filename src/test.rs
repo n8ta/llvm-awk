@@ -12,7 +12,7 @@ fn run_it(program: &str, file: &str) -> (String, String, i32) {
     let temp_path = temp_dir.path().join("temp_file");
     std::fs::write(&temp_path, file.as_bytes()).unwrap();
     let temp_path_str = temp_path.to_str().unwrap().to_string();
-    let r = run_and_capture(compile(transform(parse(lex(program).unwrap())), &[temp_path_str], false));
+    let r = run_and_capture(compile(transform(parse(lex(program).unwrap())), &[temp_path_str], true));
     r
 }
 
@@ -55,6 +55,9 @@ test!(test_float_add, "{print (1.0 + 2.0)}", ONE_LINE, "3\n", 0);
 test!(test_column_access_1_line, "{print $1; print $2; print $3; print $0}", ONE_LINE, "1\n2\n3\n1 2 3\n", 0);
 test!(test_column_access_many_line, "{print $1; print $2; print $3; print $0}",NUMBERS, "1\n2\n3\n1 2 3\n4\n5\n6\n4 5 6\n7\n8\n9\n7 8 9\n", 0);
 test!(test_if_no_else_truthy, "{if (1) { print 123; }}", ONE_LINE, "123\n", 0);
+test!(test_assign_then_print, "{ a = 1.1; print a }", ONE_LINE, "1.1\n", 0);
+test!(test_assign_then_print_sep, "{ a = 1.1 } { print a }", ONE_LINE, "1.1\n", 0);
+test!(test_assign_then_end, "{ a = 1.1 } END { print a }", ONE_LINE, "1.1\n", 0);
 test!(test_print_col1, "{ a = $1 } END { print a }", NUMBERS, "7\n", 0);
 test!(test_print_col2, "{ a = $2 } END { print a }", NUMBERS, "8\n", 0);
 test!(test_print_col3, "{ a = $3 } END { print a }", NUMBERS, "9\n", 0);

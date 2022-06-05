@@ -1,7 +1,7 @@
 use std::path::{PathBuf};
 use inkwell::memory_buffer::MemoryBuffer;
 use std::fs::File;
-use std::io::{Write};
+use std::io::{Read, Write};
 use tempfile::{tempdir, TempDir};
 
 const RUNTIME_BITCODE: &[u8] = std::include_bytes!("../../runtime.bc");
@@ -58,6 +58,18 @@ pub fn external_tools(temp_dir: &TempDir, bitcode: MemoryBuffer) -> Result<PathB
 
     if res.status.code() != Some(0) {
         eprintln!("clang++ failed to compile bitcode");
+        if let Ok(val) = std::env::var("LLVM_SYS_130_PREFIX") {
+            // llc gives helpful error messages for bitcode unlike clang. So if clang dies make
+            // an attempt to call LLC llc and print its explanation of the failure
+            let mut path = PathBuf::from(val);
+            path.push("bin");
+            path.push("llc");
+            let mut res = std::process::Command::new(path.to_str().unwrap())
+                .args(vec![program_bc_path.to_str().unwrap()])
+                .output().unwrap();
+            println!("{}", String::from_utf8(res.stdout).unwrap());
+            eprintln!("{}", String::from_utf8(res.stderr).unwrap());
+        }
         return Err((String::from_utf8(res.stdout).unwrap(), String::from_utf8(res.stderr).unwrap(), res.status.code().or(Some(255)).unwrap()));
     }
     Ok(out_path)
