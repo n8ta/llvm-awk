@@ -67,7 +67,7 @@ extern "C" void init() {
   }
   std::string current = files.at(files.size() - 1);
   files.pop_back();
-  PRINT("\tsetting current file %s", current.c_str());
+  PRINT("\tsetting current file %s\n", current.c_str());
   current_file.open(current);
 }
 
@@ -174,8 +174,7 @@ extern "C" void print_value(char tag, double value) {
       printf("%g\n", val.float_value);
     }
     PRINT("\t Tag is == 0 DONE\n");
-  } else if (tag == 1) {
-    PRINT("\t Tag is == 1\n");
+  } else if (tag == 2 || tag == 1) {
     printf("%s\n", val.str_value);
   }
 }

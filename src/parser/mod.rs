@@ -136,6 +136,7 @@ impl Parser {
     fn stmts(&mut self) -> Stmt {
         let mut stmts = vec![];
         while self.peek().ttype() != TokenType::RightBrace {
+
             let stmt = if self.matches(vec![TokenType::Print]) {
                 Stmt::Print(self.expression())
             } else if self.peek_next().ttype() == TokenType::Eq {
@@ -191,9 +192,6 @@ impl Parser {
         }
         self.equality()
     }
-    // fn str_concat(&mut self) -> Expr {
-    //     if self.mat
-    // }
     fn equality(&mut self) -> Expr {
         let mut expr = self.comparison();
         while self.matches(vec![TokenType::EqEq, TokenType::BangEq]) {
@@ -248,8 +246,12 @@ impl Parser {
                 expr
             }
             Token::Ident(name) => {
-                self.consume(TokenType::Ident, "Expected to parse a string here");
+                self.consume(TokenType::Ident, "Expected to parse an ident here");
                 Expr::Variable(name)
+            }
+            Token::String(string) => {
+                self.consume(TokenType::String, "Expected to parse a string here");
+                Expr::String(string)
             }
             t => panic!("Unexpected token {:?} {}", t, TokenType::name(t.ttype()))
         }

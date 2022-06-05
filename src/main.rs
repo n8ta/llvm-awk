@@ -27,8 +27,7 @@ fn main() {
             return;
         }
     };
-    let tokens = lex(&program).unwrap();
-    let ast = transform(parse(tokens));
+    let ast = transform(parse(lex(&program).unwrap()));
     let bitcode = codgen::compile(ast, args.files.as_slice(), args.dump);
     run(bitcode);
 }

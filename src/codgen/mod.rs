@@ -33,11 +33,13 @@ pub fn compile(prog: Stmt, files: &[String], dump: bool) -> MemoryBuffer {
 
 pub enum Value {
     Float(f64),
+    ConstString(String),
 }
 
 const ROOT: &'static str = "main";
 const FLOAT_TAG: u8 = 0;
-const STRING_TAG: u8 = 1;
+const STRING_TAG: u8 = 1; // Should be freed upon overwrite
+const CONST_STRING_TAG: u8 = 2; // Should not
 
 struct CodeGen<'ctx> {
     module: Module<'ctx>,
@@ -53,7 +55,7 @@ type ValueT<'ctx> = (IntValue<'ctx>, FloatValue<'ctx>);
 impl<'ctx> CodeGen<'ctx> {
     fn new(context: &'ctx Context) -> Self {
         let module = context.create_module("llvm-awk");
-        let execution_engine = module.create_jit_execution_engine(OptimizationLevel::Aggressive).expect("To be able to create exec engine");
+        let execution_engine = module.create_jit_execution_engine(OptimizationLevel::None).expect("To be able to create exec engine");
         let types = Types::new(context, &module);
         let mut builder = context.create_builder();
         let subroutines = Subroutines::new(context, &module, &types, &mut builder);
@@ -66,15 +68,6 @@ impl<'ctx> CodeGen<'ctx> {
             subroutines,
         };
         codegen
-    }
-
-    fn create_value(&mut self, value: Value, context: &'ctx Context) -> ValueT<'ctx> {
-        let zero_i8 = context.i8_type().const_int(0, false);
-        match value {
-            Value::Float(num) => {
-                (zero_i8, context.f64_type().const_float(num))
-            }
-        }
     }
 
     fn compile(&mut self, prog: Stmt, context: &'ctx Context, files: &[String], dump: bool) -> MemoryBuffer {
@@ -96,6 +89,7 @@ impl<'ctx> CodeGen<'ctx> {
         }
         self.builder.build_call(self.types.init, &[], "done adding files call init!");
 
+        self.define_all_vars(&prog, context);
         let final_bb = self.compile_stmt(&prog, context);
 
         self.builder.position_at_end(final_bb);
@@ -111,8 +105,6 @@ impl<'ctx> CodeGen<'ctx> {
             }
         };
 
-        println!("{}", self.module.print_to_string().to_string());
-
         if dump {
             println!("{}", self.module.print_to_string().to_string().replace("\\n", "\n"));
         }
@@ -125,10 +117,36 @@ impl<'ctx> CodeGen<'ctx> {
         self.module.write_bitcode_to_memory()
     }
 
+    fn create_value(&mut self, value: Value, context: &'ctx Context) -> ValueT<'ctx> {
+        let zero_i8 = context.i8_type().const_int(0, false);
+        let two_i8 = context.i8_type().const_int(2, false);
+        match value {
+            Value::Float(num) => {
+                (zero_i8, context.f64_type().const_float(num))
+            }
+            Value::ConstString(value) => {
+                let name = format!("const-str-{}", value);
+                let global_value = self.builder.build_global_string_ptr(&value, &name);
+                let global_ptr = global_value.as_pointer_value();
+                let float_ptr = self.cast_ptr_to_float(global_ptr, context);
+                (two_i8, float_ptr)
+            }
+        }
+    }
+
+    fn define_all_vars(&mut self, prog: &Stmt, context: &'ctx Context) {
+        let vars = variable_extract::extract(prog);
+        let zero_i8 = context.i8_type().const_int(0, false);
+        let zero = context.f64_type().const_float(0.0);
+        for var in vars {
+            self.scopes.insert(var, (zero_i8, zero));
+        }
+    }
+
     fn compile_to_bool(&mut self, expr: &Expr, context: &'ctx Context) -> IntValue<'ctx> {
         let result = self.compile_expr(expr, context);
         let tag = result.0;
-        let value= result.1;
+        let value = result.1;
         let tag_is_zero = self.builder.build_int_compare(IntPredicate::EQ, tag, context.i8_type().const_int(0, false), "tag_is_zero");
         let value_is_zero_f64 = self.builder.build_float_compare(FloatPredicate::OEQ, value, context.f64_type().const_float(0.0), "value_is_zero_f64");
         let zero_f64 = self.builder.build_and(value_is_zero_f64, tag_is_zero, "zero_f64");
@@ -199,63 +217,61 @@ impl<'ctx> CodeGen<'ctx> {
                 }
             }
             Stmt::If(test, true_blk, false_blk) => {
-                let false_blk = if let Some(fal) = false_blk { fal } else { panic!("must have false block") };
+                if let Some(false_blk) = false_blk {
+                    let then_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "then");
+                    let else_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "else");
+                    let continue_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "merge");
 
-                let then_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "then");
-                let else_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "else");
-                let continue_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "merge");
+                    let predicate = self.compile_to_bool(test, context);
+                    self.builder.build_conditional_branch(predicate, then_bb, else_bb);
 
-                let predicate = self.compile_to_bool(test, context);
-                self.builder.build_conditional_branch(predicate, then_bb, else_bb);
+                    self.builder.position_at_end(then_bb);
+                    self.scopes.begin_scope();
+                    let then_bb_final = self.compile_stmt(true_blk, context);
+                    let then_scope = self.scopes.end_scope();
+                    self.builder.build_unconditional_branch(continue_bb);
 
-                self.builder.position_at_end(then_bb);
-                self.scopes.begin_scope();
-                let then_bb_final = self.compile_stmt(true_blk, context);
-                let then_scope = self.scopes.end_scope();
-                self.builder.build_unconditional_branch(continue_bb);
+                    self.builder.position_at_end(else_bb);
+                    self.scopes.begin_scope();
+                    let else_bb_final = self.compile_stmt(false_blk, context);
+                    let else_scope = self.scopes.end_scope();
+                    self.builder.build_unconditional_branch(continue_bb);
 
-                self.builder.position_at_end(else_bb);
-                self.scopes.begin_scope();
-                let else_bb_final = self.compile_stmt(false_blk, context);
-                let else_scope = self.scopes.end_scope();
-                self.builder.build_unconditional_branch(continue_bb);
+                    self.builder.position_at_end(continue_bb);
 
-                self.builder.position_at_end(continue_bb);
+                    self.build_phis(vec![(then_bb_final, then_scope), (else_bb_final, else_scope)], context);
 
-                self.build_phis(vec![(then_bb_final, then_scope), (else_bb_final, else_scope)], context);
+                    return continue_bb;
+                } else {
+                    let init_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "init");
+                    let then_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "then");
+                    let continue_bb = context.append_basic_block(self.module.get_function(ROOT).expect("root to exist"), "continue");
 
-                return continue_bb;
+                    let predicate = self.compile_to_bool(test, context);
+                    self.builder.build_conditional_branch(predicate, then_bb, continue_bb);
+
+                    self.builder.position_at_end(then_bb);
+                    self.scopes.begin_scope();
+                    let then_bb_final = self.compile_stmt(true_blk, context);
+                    let then_scope = self.scopes.end_scope();
+                    self.builder.build_unconditional_branch(continue_bb);
+
+                    self.builder.position_at_end(continue_bb);
+
+                    self.build_phis(vec![(then_bb_final, then_scope), (init_bb, ScopeInfo::new())], context);
+
+                    return continue_bb;
+                }
             }
         }
         self.builder.get_insert_block().unwrap()
     }
 
-    fn build_to_number(&mut self, value: ValueT<'ctx>, context: &'ctx Context) -> (FloatValue<'ctx>, BasicBlock<'ctx>) {
-        // Get ROOT function
-        let root = self.module.get_function(ROOT).expect("root to exist");
-        // Basic blocks for not number and number
-        let init_bb = self.builder.get_insert_block().unwrap();
-        let not_number_bb = context.append_basic_block(root, "not_number");
-        let done_bb = context.append_basic_block(root, "done_bb");
-
-        let cmp = self.builder.build_int_compare(IntPredicate::EQ, context.i8_type().const_int(0, false), value.0, "is_zero");
-        self.builder.build_conditional_branch(cmp, done_bb, not_number_bb);
-
-        self.builder.position_at_end(not_number_bb);
-        let number: FloatValue = self.builder.build_call(self.types.string_to_number, &[value.0.into(), value.1.into()], "string_to_number").as_any_value_enum().into_float_value();
-        self.builder.build_unconditional_branch(done_bb);
-
-        self.builder.position_at_end(done_bb);
-        let phi = self.builder.build_phi(context.f64_type(), "string_to_number_phi");
-        let init_value = value.1.as_basic_value_enum();
-        let number_value = number.as_basic_value_enum();
-        phi.add_incoming(&[(&init_value, init_bb), (&number, not_number_bb)]);
-        (phi.as_basic_value().into_float_value(), done_bb)
-    }
-
     fn compile_expr(&mut self, expr: &Expr, context: &'ctx Context) -> ValueT<'ctx> {
         match expr {
-            Expr::String(_str) => todo!("Strings"),
+            Expr::String(str) => {
+                self.create_value(Value::ConstString(str.clone()), context)
+            }
             Expr::Variable(str) => self.scopes.lookup(str).expect("to be defined"), // todo: default value
             Expr::NumberF64(num) => {
                 self.create_value(Value::Float(*num), context)
@@ -290,6 +306,13 @@ impl<'ctx> CodeGen<'ctx> {
     fn cast_int_to_float(&self, int: IntValue<'ctx>, context: &'ctx Context) -> FloatValue<'ctx> {
         self.builder.build_bitcast::<FloatType, IntValue>(
             int, context.f64_type().into(), "cast-int-to-float").into_float_value()
+    }
+
+    fn cast_ptr_to_float(&self, ptr: PointerValue<'ctx>, context: &'ctx Context) -> FloatValue<'ctx> {
+        let int = self.builder.build_ptr_to_int(ptr, context.i64_type(), "ptr-to-int");
+        self.cast_int_to_float(int, context)
+        // self.builder.build_bitcast::<FloatType, PointerValue>(
+        //     ptr, context.f64_type().into(), "cast-int-to-float").into_float_value()
     }
 
     fn build_phis(&mut self, predecessors: Vec<(BasicBlock<'ctx>, ScopeInfo<'ctx>)>, context: &'ctx Context) {
@@ -338,8 +361,29 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn build_f64_binop(&mut self, left_float: FloatValue<'ctx>, right_float: FloatValue<'ctx>, op: &BinOp, context: &'ctx Context) -> ValueT<'ctx> {
+    fn build_to_number(&mut self, value: ValueT<'ctx>, context: &'ctx Context) -> (FloatValue<'ctx>, BasicBlock<'ctx>) {
+        // Get ROOT function
+        let root = self.module.get_function(ROOT).expect("root to exist");
+        // Basic blocks for not number and number
+        let init_bb = self.builder.get_insert_block().unwrap();
+        let not_number_bb = context.append_basic_block(root, "not_number");
+        let done_bb = context.append_basic_block(root, "done_bb");
 
+        let cmp = self.builder.build_int_compare(IntPredicate::EQ, context.i8_type().const_int(0, false), value.0, "is_zero");
+        self.builder.build_conditional_branch(cmp, done_bb, not_number_bb);
+
+        self.builder.position_at_end(not_number_bb);
+        let number: FloatValue = self.builder.build_call(self.types.string_to_number, &[value.0.into(), value.1.into()], "string_to_number").as_any_value_enum().into_float_value();
+        self.builder.build_unconditional_branch(done_bb);
+
+        self.builder.position_at_end(done_bb);
+        let phi = self.builder.build_phi(context.f64_type(), "string_to_number_phi");
+        let init_value = value.1.as_basic_value_enum();
+        phi.add_incoming(&[(&init_value, init_bb), (&number, not_number_bb)]);
+        (phi.as_basic_value().into_float_value(), done_bb)
+    }
+
+    fn build_f64_binop(&mut self, left_float: FloatValue<'ctx>, right_float: FloatValue<'ctx>, op: &BinOp, context: &'ctx Context) -> ValueT<'ctx> {
         let name = "both-f64-binop-tag";
         let res = match op {
             BinOp::Minus => self.builder.build_float_sub(left_float, right_float, name),
