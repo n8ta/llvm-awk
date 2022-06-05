@@ -3,6 +3,7 @@
 #include <iostream>
 #include <vector>
 #include <fstream>
+#include <math.h>
 
 //#define DEBUG 1
 
@@ -12,12 +13,14 @@
 #define PRINT(...) do{ } while ( false )
 #endif
 
+static char CONVFMT[] = "%.6g";
+
 union Value {
   double float_value;
-  int64_t int_value;
   char* str_value;
 };
 
+static char empty_string[] = "";
 static char FS = ' ';
 static char RS = '\n';
 
@@ -38,10 +41,12 @@ char* owned_string(std::string data) {
 }
 
 // Frees a string created by owned_string
-extern "C" void free_string(char tag, int64_t value) {
-  PRINT("Free string called tag:%d value:%lld", tag, value);
-  if (tag == 2) {
-    free((void*) value);
+extern "C" void free_string(char tag, double value) {
+  PRINT("Free string called tag:%d value:%g", tag, value);
+  if (tag == 1) {
+    union Value myVal;
+    myVal.float_value = value;
+    free( (void*) myVal.str_value );
   } else {
     printf("\tllawk compiler bug: tried to free a non-string value!");
   }
@@ -56,8 +61,13 @@ extern "C" void add_file(void *path) {
 // Called when done adding files;
 extern "C" void init() {
   PRINT("Init called\n");
+  if (files.empty()) {
+    PRINT("\t files empty return");
+    return;
+  }
   std::string current = files.at(files.size() - 1);
   files.pop_back();
+  PRINT("\tsetting current file %s", current.c_str());
   current_file.open(current);
 }
 
@@ -123,63 +133,80 @@ extern "C" int64_t next_line() {
 
 // Returns a pointer to a c_string that the caller now is responsible for
 // freeing or 0 if column is too large.
-extern "C" int64_t column(char tag, int64_t value) {
-  PRINT("column call tag %d value %lld\n", tag, value);
+extern "C" double column(char tag, double value) {
+  PRINT("column call tag %d value %g\n", tag, value);
+  union Value val;
   if (tag == 0) {
     if (value == 0) {
       PRINT("\tcolumn == 0 return full line\n");
-      return (int64_t) owned_string(full_line);
+      val.str_value= owned_string(full_line);
+      return val.float_value;
     }
     if (value - 1 >= fields.size()) {
       PRINT("\tcolumn too large ret empty string\n");
       std::string empty = "";
-      return (int64_t) owned_string(empty); //empty string is repr by 0
+      val.str_value= owned_string(empty);
+      return val.float_value;
     }
-    int64_t int_value = (int64_t) owned_string(fields.at(value-1));
-    PRINT("\tcolumn normal return fields[col-1] %s int: %lld\n", fields.at(value-1).c_str(), int_value);
-    return int_value;
+    val.str_value= owned_string(fields.at(value-1));
+    PRINT("\tcolumn normal return fields[col-1] %s\n", fields.at(value-1).c_str());
+    return val.float_value;
   } else {
-    printf("\tCannot get column from tag %d returning $0\n", tag);
-    return (int64_t) owned_string(full_line);
+    PRINT("\tCannot get column from tag %d returning $0\n", tag);
+    val.str_value= owned_string(full_line);
+    return val.float_value;
   }
 }
 
-extern "C" void print_value(char tag, int64_t value) {
+extern "C" void print_value(char tag, double value) {
   // Is it UB? Yes. Is it easy? Yes;
   union Value val;
-  val.int_value = value;
-  PRINT("Print value called tag %c value %lld\n", tag, value);
+  val.float_value = value;
+  PRINT("Print value called tag %c value %g\n", tag, val.float_value);
   if (tag == 0) {
-    PRINT("\t Tag is == 0 %lld\n", val.int_value);
-    printf("%lld\n", val.int_value);
+    if (ceilf(value) == value) {
+      int64_t int_value = static_cast<int>(value);
+      printf("%lld\n", int_value);
+    } else {
+      printf("%g\n", val.float_value);
+    }
+    PRINT("\t Tag is == 0 DONE\n");
   } else if (tag == 1) {
     PRINT("\t Tag is == 1\n");
-    printf("%g\n", (double) val.float_value);
-  } else if (tag == 2) {
-    PRINT("\t Tag is == 2\n");
     printf("%s\n", val.str_value);
   }
 }
 
-
-// 0 is TRUE, but only here. Sorry about that...
-extern "C" long int to_bool_i64(char tag, int64_t value) {
+extern "C" double string_to_number(char tag, double value) {
+  // TODO: Strings that can’t be interpreted as valid numbers convert to zero.
   union Value val;
-  val.int_value = value;
-  PRINT("to_bool_i64 tag:%d value:%lld value:%lf\n", (int) tag, val.int_value, val.float_value);
-  if (tag == 0) {
-    return val.int_value == 0 ? 0 : 1;
-  } else if (tag == 1) {
-    return val.float_value == 0.0 ? 0 : 1;
-  } else if (tag == 2) {
-    PRINT("\tstring is %s", val.str_value);
-    return strlen(val.str_value) == 0 ? 1 : 0;
-  }
-  return 1;
+  val.float_value = value;
+  PRINT("string_to_number called tag %d value %g\n", tag, value);
+
+  // TODO: This is UB if the string is not representable as a double.
+  return atof(val.str_value);
 }
 
-extern "C" void print_mismatch() {
-  printf("integer float mismatch\n");
+extern "C" double number_to_string(char tag, double value) {
+  union Value val;
+  val.float_value = value;
+  PRINT("number_to_string called tag %d value %g\n", tag, value);
+
+  char* result = (char*) malloc(64);
+  int bytes_needed_init = snprintf(result, 64, &CONVFMT[0], val.float_value);
+  if (bytes_needed_init < 0) {
+    printf("FAILURE converting number to string %g tag(%d)\n", value, tag);
+  }
+  if (bytes_needed_init > 64) {
+    free(result);
+    result = (char*) malloc(bytes_needed_init);
+    int bytes_needed_realloc = snprintf(result, 64, &CONVFMT[0], val.float_value);
+    if (bytes_needed_realloc > bytes_needed_init) {
+      printf("FAILURE converting number to string %g tag(%d)\n", value, tag);
+    }
+  }
+  val.str_value = result;
+  return val.float_value;
 }
 
 // something llvm will probably not optimize out. Handy at times to see full IR.

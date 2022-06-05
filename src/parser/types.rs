@@ -29,7 +29,6 @@ impl PatternAction {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
     NumberF64(f64),
-    NumberI64(i64),
     String(String),
     BinOp(Box<Expr>, BinOp, Box<Expr>),
     LogicalOp(Box<Expr>, LogicalOp, Box<Expr>),
@@ -45,7 +44,6 @@ impl Display for Expr {
             Expr::Variable(n) => write!(f, "var {}", n),
             Expr::String(str) => write!(f, "\"{}\"", str),
             Expr::NumberF64(n) => write!(f, "{}", n),
-            Expr::NumberI64(n) => write!(f, "{}", n),
             Expr::BinOp(left, op, right) => write!(f, "{}{}{}", left, op, right),
             Expr::LogicalOp(left, op, right) => write!(f, "{}{}{}", left, op, right),
             Expr::Column(col) => write!(f, "{}", col),

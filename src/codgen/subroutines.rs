@@ -17,18 +17,18 @@ impl<'ctx> Subroutines<'ctx> {
         }
     }
     fn build_free_if_string(context: &'ctx Context, module: &Module<'ctx>, types: &Types<'ctx>, builder: &mut Builder) -> FunctionValue<'ctx> {
+        let ffi_type = &[context.i8_type().into(), context.f64_type().into()];
 
-        let free_if_string = module.add_function("free_if_string", context.void_type().fn_type(&[types.value.into()], false), None);
+        let free_if_string = module.add_function("free_if_string", context.void_type().fn_type(ffi_type, false), None);
         let init_bb = context.append_basic_block(free_if_string, "free_string_init");
         let free_string_bb = context.append_basic_block(free_if_string, "free_string_ffi_call");
         let ret_bb = context.append_basic_block(free_if_string, "free_string_ret");
 
         // init -> free_string_bb or ret_bb
         builder.position_at_end(init_bb);
-        let value = free_if_string.get_nth_param(0).expect("to have 1 struct arg").into_struct_value();
-        let tag = builder.build_extract_value(value, 0, "extract-tga-free-str-val").unwrap().into_int_value();
-        let value = builder.build_extract_value(value, 1, "extract-value-free-str-val").unwrap().into_int_value();
-        let tag_cmp = builder.build_int_compare(IntPredicate::EQ, tag, context.i8_type().const_int(2, false), "cmp_with_str_tag");
+        let tag = free_if_string.get_nth_param(0).expect("to have 1 tag arg").into_int_value();
+        let value = free_if_string.get_nth_param(1).expect("to have 1 value arg").into_float_value();
+        let tag_cmp = builder.build_int_compare(IntPredicate::EQ, tag, context.i8_type().const_int(1, false), "cmp_with_str_tag");
         builder.build_conditional_branch(tag_cmp, free_string_bb, ret_bb);
 
         // free the string

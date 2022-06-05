@@ -65,19 +65,11 @@ impl<'a> Lexer<'a> {
         while self.peek().is_digit(10) { self.advance(); }
 
         let num = self.src.chars().skip(self.start).take(self.current - self.start).collect::<String>();
-        if is_float {
-            match num.parse::<f64>() {
-                Ok(float) => Ok(Token::NumberF64(float)),
-                Err(_) => {
-                    return Err(format!("Unable to parse f64 {}", num));
-                }
-            }
-        } else {
-            match num.parse::<i64>() {
-                Ok(num) => Ok(Token::NumberI64(num)),
-                Err(_) => {
-                    return Err(format!("Unable to parse i64 {}", num));
-                }
+        // TODO: scientific notation
+        match num.parse::<f64>() {
+            Ok(float) => Ok(Token::NumberF64(float)),
+            Err(_) => {
+                return Err(format!("Unable to parse f64 {}", num));
             }
         }
     }
@@ -259,7 +251,7 @@ fn test_braces() {
 fn test_column_simple() {
     let str = "$1";
     let tokens = lex(str).unwrap();
-    assert_eq!(tokens, vec![Token::Column, Token::NumberI64(1), Token::EOF]);
+    assert_eq!(tokens, vec![Token::Column, Token::NumberF64(1.0), Token::EOF]);
 }
 
 
@@ -267,14 +259,14 @@ fn test_column_simple() {
 fn test_columns() {
     let str = "$1 + $2000 $0";
     let tokens = lex(str).unwrap();
-    assert_eq!(tokens, vec![Token::Column, Token::NumberI64(1), Token::BinOp(BinOp::Plus), Token::Column, Token::NumberI64(2000), Token::Column, Token::NumberI64(0), Token::EOF]);
+    assert_eq!(tokens, vec![Token::Column, Token::NumberF64(1.0), Token::BinOp(BinOp::Plus), Token::Column, Token::NumberF64(2000.0), Token::Column, Token::NumberF64(0.0), Token::EOF]);
 }
 
 #[test]
 fn test_lex_binops_and_true_false() {
     let str = "4*2+1-2+false/true";
     let tokens = lex(str).unwrap();
-    assert_eq!(tokens, vec![Token::NumberI64(4), Token::BinOp(BinOp::Star), Token::NumberI64(2), Token::BinOp(BinOp::Plus), Token::NumberI64(1), Token::BinOp(BinOp::Minus), Token::NumberI64(2), Token::BinOp(BinOp::Plus), Token::False, Token::BinOp(BinOp::Slash), Token::True, Token::EOF]);
+    assert_eq!(tokens, vec![Token::NumberF64(4.0), Token::BinOp(BinOp::Star), Token::NumberF64(2.0), Token::BinOp(BinOp::Plus), Token::NumberF64(1.0), Token::BinOp(BinOp::Minus), Token::NumberF64(2.0), Token::BinOp(BinOp::Plus), Token::False, Token::BinOp(BinOp::Slash), Token::True, Token::EOF]);
 }
 
 #[test]
@@ -286,36 +278,36 @@ fn test_lex_decimals() {
 #[test]
 fn test_lex_equality() {
     let str = "4 != 5 == 6";
-    assert_eq!(lex(str).unwrap(), vec![Token::NumberI64(4), Token::BinOp(BinOp::BangEq), Token::NumberI64(5), Token::BinOp(BinOp::EqEq), Token::NumberI64(6), Token::EOF]);
+    assert_eq!(lex(str).unwrap(), vec![Token::NumberF64(4.0), Token::BinOp(BinOp::BangEq), Token::NumberF64(5.0), Token::BinOp(BinOp::EqEq), Token::NumberF64(6.0), Token::EOF]);
 }
 
 #[test]
 fn test_lex_logical_op() {
     let str = "4 && 5 || 6";
-    assert_eq!(lex(str).unwrap(), vec![Token::NumberI64(4), Token::LogicalOp(LogicalOp::And), Token::NumberI64(5), Token::LogicalOp(LogicalOp::Or), Token::NumberI64(6), Token::EOF]);
+    assert_eq!(lex(str).unwrap(), vec![Token::NumberF64(4.0), Token::LogicalOp(LogicalOp::And), Token::NumberF64(5.0), Token::LogicalOp(LogicalOp::Or), Token::NumberF64(6.0), Token::EOF]);
 }
 
 #[test]
 fn test_lex_assignment() {
     let str = "abc = 4";
-    assert_eq!(lex(str).unwrap(), vec![Token::Ident("abc".to_string()), Token::Eq, Token::NumberI64(4), Token::EOF]);
+    assert_eq!(lex(str).unwrap(), vec![Token::Ident("abc".to_string()), Token::Eq, Token::NumberF64(4.0), Token::EOF]);
 }
 #[test]
 fn test_ret() {
     let str = "return 1 return abc";
-    assert_eq!(lex(str).unwrap(), vec![Token::Ret, Token::NumberI64(1), Token::Ret, Token::Ident(format!("abc")), Token::EOF]);
+    assert_eq!(lex(str).unwrap(), vec![Token::Ret, Token::NumberF64(1.0), Token::Ret, Token::Ident(format!("abc")), Token::EOF]);
 }
 
 #[test]
 fn test_if_else() {
     let str = "if (1) { 2 } else { 3 }";
-    assert_eq!(lex(str).unwrap(), vec![Token::If, Token::LeftParen, Token::NumberI64(1), Token::RightParen, Token::LeftBrace, Token::NumberI64(2), Token::RightBrace, Token::Else, Token::LeftBrace, Token::NumberI64(3), Token::RightBrace, Token::EOF]);
+    assert_eq!(lex(str).unwrap(), vec![Token::If, Token::LeftParen, Token::NumberF64(1.0), Token::RightParen, Token::LeftBrace, Token::NumberF64(2.0), Token::RightBrace, Token::Else, Token::LeftBrace, Token::NumberF64(3.0), Token::RightBrace, Token::EOF]);
 }
 
 #[test]
 fn test_if_only() {
     let str = "if (1) { 2 }";
-    assert_eq!(lex(str).unwrap(), vec![Token::If, Token::LeftParen, Token::NumberI64(1), Token::RightParen, Token::LeftBrace, Token::NumberI64(2), Token::RightBrace, Token::EOF]);
+    assert_eq!(lex(str).unwrap(), vec![Token::If, Token::LeftParen, Token::NumberF64(1.0), Token::RightParen, Token::LeftBrace, Token::NumberF64(2.0), Token::RightBrace, Token::EOF]);
 }
 #[test]
 fn test_begin_end() {

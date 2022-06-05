@@ -28,4 +28,4 @@ assigning to fields
 - If without else
 - break, continue, do while, next, exit, exit expression, `for var in array`, `for (expr; expr; expr) stmts`
 printf, print `expression-list`
-
+- strings converted into numbres should support scientific notation eg. `"1e3" + 2 = 1002`;
