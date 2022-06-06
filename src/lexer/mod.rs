@@ -138,10 +138,6 @@ impl<'a> Lexer<'a> {
         let c = self.advance();
         match c {
             '$' => self.add_token(Token::Column),
-            // '(' => self.add_token(Token::LeftParen),
-            // ')' => self.add_token(Token::RightParen),
-            // '{' => self.add_token(Token::LeftBrace),
-            // '}' => self.add_token(Token::RightBrace),
             '-' => self.add_token(Token::BinOp(BinOp::Minus)),
             '+' => self.add_token(Token::BinOp(BinOp::Plus)),
             // ';' => self.add_token(Token::Semicolon),
@@ -355,4 +351,10 @@ fn test_lex_for_l00p() {
     let str = "for (a = 0;";
     let a = Token::Ident(format!("a"));
     assert_eq!(lex(str).unwrap(), vec![Token::For, Token::LeftParen, a.clone(), Token::Eq, Token::NumberF64(0.0), Token::Semicolon, Token::EOF]);
+}
+
+#[test]
+fn test_lt_gt_eq() {
+    let str = "< <= >= >";
+    assert_eq!(lex(str).unwrap(), vec![Token::BinOp(BinOp::Less), Token::BinOp(BinOp::LessEq), Token::BinOp(BinOp::GreaterEq), Token::BinOp(BinOp::Greater), Token::EOF]);
 }

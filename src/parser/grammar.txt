@@ -10,20 +10,19 @@ add_sub_op:
 mult_div_op:
     "*"
     "/"
-eq_op:
-    "!="
-    "=="
-comp_op
-    "<="
-    "<"
-    ">"
-    ">="
+
+
 expr: column
     | str_concat
 str_concat: equality (equality)*
-equality: comparison ( eq_op comparison ) *
 comparison: term (ad_sub_op term ) *
-term: primary ( mult_div_op primary ) *
+term: cmp_op ( mult_div_op compare_lt ) *
+compare_lt: compare_lteq ( '<' compare_lteq)
+compare_lteq: compare_bangeq ( '<=' compare_bangeq)*
+compare_bangeq: compare_eqeq ( '!=' compare_eqeq)*
+compare_eqeq: compare_gt ( '==' compare_gt)*
+compare_gt: compare_gteq ( '>' compare_gteq)*
+compare_gteq: primary ( '>=' primary)
 primary:
     num
     "(" expr ")"
