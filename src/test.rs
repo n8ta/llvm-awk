@@ -39,7 +39,8 @@ macro_rules! test{
 }
 
 test!(test_print_int, "{print 1;}", ONE_LINE, "1\n", 0);
-test!(test_begin_end, "BEGIN { print 1; } END { print 3; } END { print 4; }", ONE_LINE, "1\n3\n4\n", 0);
+test!(test_just_begin, "BEGIN { print 1; }", ONE_LINE, "1\n", 0);
+test!(test_e2e_begin_end, "BEGIN { print 1; } END { print 3; } END { print 4; }", ONE_LINE, "1\n3\n4\n", 0);
 test!(test_oo_beg_end, "END { print 3; } { print 2; } BEGIN {print 1;}", ONE_LINE, "1\n2\n3\n", 0);
 test!(test_dup_beg_end, "end { print 4; } END { print 3; } { print 2; } begin { print 0; } BEGIN {print 1;} ", ONE_LINE, "0\n1\n2\n4\n3\n", 0);
 test!(test_simple_assignment, "{x = 0; print x;}", ONE_LINE, "0\n", 0);

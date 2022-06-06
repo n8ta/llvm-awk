@@ -41,7 +41,7 @@ impl<'ctx> Types<'ctx> {
         let f64 = context.f64_type();
         let ret_void_arg_value = context.void_type().fn_type(&[i8.into(), f64.into()], false);
         let get_float_type = f64.fn_type(&[], false);
-        let next_line_type = context.i64_type().fn_type(&[], false);
+        let next_line_type = context.f64_type().fn_type(&[], false);
         let column_type = context.f64_type().fn_type(&[i8.into(), f64.into()], false);
         let mut message = String::new(); // to satisfy llvm types just pass everything as a 200 long vector
         for _i in 0..200 {

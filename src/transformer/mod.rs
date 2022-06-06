@@ -13,8 +13,10 @@ pub fn transform(program: parser::Program) -> Stmt {
         };
         every_line_stms.push(stmt)
     }
-    let line_loop = Stmt::While(Expr::Call, Box::new(Stmt::Group(every_line_stms)));
-    prog.push(line_loop);
+    if every_line_stms.len() > 0 {
+        let line_loop = Stmt::While(Expr::Call, Box::new(Stmt::Group(every_line_stms)));
+        prog.push(line_loop);
+    }
 
     for end in program.ends {
         prog.push(end);

@@ -85,7 +85,7 @@ int next_file() {
   return 1;
 }
 
-extern "C" int64_t next_line() {
+extern "C" double next_line() {
   fields.clear();
   PRINT("Next line called\n");
   if (!std::getline(current_file, full_line, RS)) {
@@ -112,7 +112,7 @@ extern "C" int64_t next_line() {
     }
     if (!found) {
       PRINT("\tOut of files return false 0\n");
-      return 0;
+      return 0.0;
     }
   }
   size_t start = 0;
@@ -131,7 +131,7 @@ extern "C" int64_t next_line() {
     }
   }
   PRINT("next line returns 1-true\n");
-  return 1;
+  return 1.0;
 }
 
 // Returns a pointer to a c_string that the caller now is responsible for

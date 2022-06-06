@@ -136,7 +136,6 @@ impl Parser {
     fn stmts(&mut self) -> Stmt {
         let mut stmts = vec![];
         while self.peek().ttype() != TokenType::RightBrace {
-
             let stmt = if self.matches(vec![TokenType::Print]) {
                 Stmt::Print(self.expression())
             } else if self.peek_next().ttype() == TokenType::Eq {
@@ -354,7 +353,7 @@ fn test_if_else_continues() {
 }
 
 #[test]
-fn test_begin_end() {
+fn test_paser_begin_end() {
     use crate::lexer::lex;
     let str = "a { print 5; } BEGIN { print 1; } begin { print 2; } END { print 3; } end { print 4; }";
     let actual = parse(lex(str).unwrap());
@@ -365,7 +364,7 @@ fn test_begin_end() {
 }
 
 #[test]
-fn test_begin_end2() {
+fn test_parser_begin_end2() {
     use crate::lexer::lex;
     let str = "a { print 5; }";
     let actual = parse(lex(str).unwrap());
@@ -400,7 +399,7 @@ fn test_column() {
     assert_eq!(actual, Program::new(vec![], vec![], vec![pa]));
 }
 
-#[test]
+// #[test]
 fn test_while_l00p() {
     use crate::lexer::lex;
     let str = "{ while (123) { print 1; } }";
