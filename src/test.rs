@@ -65,4 +65,19 @@ test!(test_print_col3, "{ a = $3 } END { print a }", NUMBERS, "9\n", 0);
 test!(test_print_col0, "{ a = $0 } END { print a }", NUMBERS, "7 8 9\n", 0);
 test!(test_print_col_big, "{ a = $44 } END { print a }", NUMBERS, "\n", 0);
 
+test!(test_eqeq_true, "{ if (0==0) { print 123; } else {print 456;} }", ONE_LINE, "123\n", 0);
+test!(test_eqeq_false, "{ if (0==1) { print 123; } else {print 456;} }", ONE_LINE, "456\n", 0);
+test!(test_bangeq_true, "{ if (0!=0) { print 123; } else {print 456;} }", ONE_LINE, "456\n", 0);
+test!(test_bangeq_false, "{ if (0!=1) { print 123; } else {print 456;} }", ONE_LINE, "123\n", 0);
+
+test!(test_lt_true, "{ if (0 < 123) { print 123; } else {print 456;} }", ONE_LINE, "123\n", 0);
+test!(test_lt_false, "{ if (123 < 12) { print 123; } else {print 456;} }", ONE_LINE, "456\n", 0);
+test!(test_lteq_true, "{ if (0 <= 1) { print 123; } else {print 123;} }", ONE_LINE, "123\n", 0);
+test!(test_lteq_false, "{ if (1 <= 0) { print 123; } else {print 456;} }", ONE_LINE, "456\n", 0);
+
+test!(test_gt_true, "{ if (1 > 0) { print 123; } else {print 456;} }", ONE_LINE, "123\n", 0);
+test!(test_gt_false, "{ if (0 > 1) { print 123; } else {print 456;} }", ONE_LINE, "456\n", 0);
+test!(test_gteq_true, "{ if (1 >= 0) { print 123; } else {print 456;} }", ONE_LINE, "123\n", 0);
+test!(test_gteq_false, "{ if (0 >= 1) { print 123; } else {print 456;} }", ONE_LINE, "456\n", 0);
+
 // test!(test_if_no_else_truthy, "{if (1) { print "truthy"; }}", ONE_LINE, "truthy\n", 0);

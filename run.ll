@@ -6,7 +6,7 @@ declare extern_weak void @print_value(i8, double)
 
 declare extern_weak double @get_float()
 
-declare extern_weak i64 @next_line()
+declare extern_weak double @next_line()
 
 declare extern_weak double @column(i8, double)
 
@@ -31,30 +31,55 @@ free_string_ffi_call:                             ; preds = %free_string_init
 
 free_string_ret:                                  ; preds = %free_string_init
   ret void
+  %zero_tag = alloca i8, align 1
+  %one_tag = alloca i8, align 1
+  %zero_value = alloca double, align 8
+  %one_value = alloca double, align 8
+  store i8 0, i8* %zero_tag, align 1
+  store i8 0, i8* %one_tag, align 1
+  store double 0.000000e+00, double* %zero_value, align 8
+  store double 0.000000e+00, double* %one_value, align 8
 }
 
 define i64 @main() {
 init_bb:
   %"file_path string alloc" = alloca [201 x i8], align 1
-  store [201 x i8] c"/var/folders/6n/rwqzdntn1hd46w7f_wrcff0c0000gn/T/.tmpyfYaTk/temp_file\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00", [201 x i8]* %"file_path string alloc", align 1
+  store [201 x i8] c"data.txt\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00", [201 x i8]* %"file_path string alloc", align 1
   call void @add_file([201 x i8]* %"file_path string alloc")
   call void @init()
   br label %while_test
 
 while_test:                                       ; preds = %while_body, %init_bb
-  %get_next_line = call i64 @next_line()
-  %cast-int-to-float = bitcast i64 %get_next_line to double
-  %value_is_zero_f64 = fcmp oeq double %cast-int-to-float, 0.000000e+00
-  %predicate = xor i1 %value_is_zero_f64, true
+  %get_next_line = call double @next_line()
+  %tag = alloca i8, align 1
+  %value = alloca double, align 8
+  store i8 0, i8* %tag, align 1
+  store double %get_next_line, double* %value, align 8
+  %tag1 = load i8, i8* %tag, align 1
+  %value2 = load double, double* %value, align 8
+  %tag_is_zero = icmp eq i8 %tag1, 0
+  %value_is_zero_f64 = fcmp oeq double %value2, 0.000000e+00
+  %zero_f64 = and i1 %value_is_zero_f64, %tag_is_zero
+  %predicate = xor i1 %zero_f64, true
   br i1 %predicate, label %while_body, label %while_continue
 
 while_body:                                       ; preds = %while_test
-  %phi_a_tag = phi i8 [ 0, %init_bb ], [ 0, %while_body ]
-  %phi_a_value = phi double [ 0.000000e+00, %init_bb ], [ 1.100000e+00, %while_body ]
-  call void @free_if_string(i8 0, double 0.000000e+00)
+  %tag3 = alloca i8, align 1
+  %value4 = alloca double, align 8
+  store i8 0, i8* %tag3, align 1
+  store double 1.000000e+00, double* %value4, align 8
+  %tag5 = load i8, i8* %tag3, align 1
+  %value6 = load double, double* %value4, align 8
+  %get_column = call double @column(i8 %tag5, double %value6)
+  %tag7 = alloca i8, align 1
+  %value8 = alloca double, align 8
+  store i8 1, i8* %tag7, align 1
+  store double %get_column, double* %value8, align 8
+  %tag9 = load i8, i8* %tag7, align 1
+  %value10 = load double, double* %value8, align 8
+  call void @print_value(i8 %tag9, double %value10)
   br label %while_test
 
 while_continue:                                   ; preds = %while_test
-  call void @print_value(i8 %phi_a_tag, double %phi_a_value)
   ret i64 0
-}
+

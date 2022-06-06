@@ -38,7 +38,8 @@ pub enum Value {
 
 const ROOT: &'static str = "main";
 const FLOAT_TAG: u8 = 0;
-const STRING_TAG: u8 = 1; // Should be freed upon overwrite
+const STRING_TAG: u8 = 1;
+// Should be freed upon overwrite
 const CONST_STRING_TAG: u8 = 2; // Should not
 
 struct CodeGen<'ctx> {
@@ -59,6 +60,7 @@ impl<'ctx> CodeGen<'ctx> {
         let types = Types::new(context, &module);
         let mut builder = context.create_builder();
         let subroutines = Subroutines::new(context, &module, &types, &mut builder);
+
         let codegen = CodeGen {
             module,
             builder,
@@ -119,7 +121,7 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn alloc(&mut self, tag: IntValue<'ctx>, value: FloatValue<'ctx>, context: &'ctx Context) -> (PointerValue<'ctx>, PointerValue<'ctx>) {
         let tag_ptr = self.builder.build_alloca(context.i8_type(), "tag");
-        let value_ptr = self.builder.build_alloca(context.f64_type(),"value");
+        let value_ptr = self.builder.build_alloca(context.f64_type(), "value");
         self.builder.build_store(tag_ptr, tag);
         self.builder.build_store(value_ptr, value);
         (tag_ptr, value_ptr)
@@ -135,7 +137,6 @@ impl<'ctx> CodeGen<'ctx> {
                 self.alloc(zero_i8, context.f64_type().const_float(num), context)
             }
             Value::ConstString(value) => {
-
                 let name = format!("const-str-{}", value);
                 let global_value = self.builder.build_global_string_ptr(&value, &name);
                 let global_ptr = global_value.as_pointer_value();
@@ -221,7 +222,7 @@ impl<'ctx> CodeGen<'ctx> {
                     self.builder.build_call(self.subroutines.free_if_string, &args, "call-free-if-str");
                     let fin = self.load(fin);
                     self.builder.build_store(existing.0, fin.0);
-                    self.builder.build_store(existing.1, fin.1  );
+                    self.builder.build_store(existing.1, fin.1);
                 } else {
                     panic!("Undefined variable {}", name);
                 }
@@ -386,7 +387,7 @@ impl<'ctx> CodeGen<'ctx> {
         let not_number_bb = context.append_basic_block(root, "not_number");
         let done_bb = context.append_basic_block(root, "done_bb");
 
-        let (tag,value) = self.load(value_ptrs);
+        let (tag, value) = self.load(value_ptrs);
         let cmp = self.builder.build_int_compare(IntPredicate::EQ, context.i8_type().const_int(0, false), tag, "is_zero");
         self.builder.build_conditional_branch(cmp, done_bb, not_number_bb);
 
@@ -409,6 +410,35 @@ impl<'ctx> CodeGen<'ctx> {
             BinOp::Plus => self.builder.build_float_add(left_float, right_float, name),
             BinOp::Slash => self.builder.build_float_div(left_float, right_float, name),
             BinOp::Star => self.builder.build_float_mul(left_float, right_float, name),
+            BinOp::Greater | BinOp::Less | BinOp::GreaterEq |
+            BinOp::LessEq | BinOp::EqEq | BinOp::BangEq => {
+                let predicate = op.predicate();
+                let result = self.builder.build_float_compare(predicate, left_float, right_float, name);
+
+                let result_tag = self.builder.build_alloca(context.i8_type(), &format!("{}_result", name));
+                let result_value = self.builder.build_alloca(context.f64_type(), &format!("{}_result", name));
+
+                let root = self.module.get_function(ROOT).expect("root to exist");
+                let is_zero_bb = context.append_basic_block(root, "binop_zero");
+                let is_one_bb = context.append_basic_block(root, "binop_one");
+                let continue_bb = context.append_basic_block(root, "binop_cont");
+
+                self.builder.build_store(result_tag, context.i8_type().const_int(FLOAT_TAG as u64, false));
+
+                self.builder.build_conditional_branch(result, is_one_bb, is_zero_bb);
+
+                self.builder.position_at_end(is_one_bb);
+                self.builder.build_unconditional_branch(continue_bb);
+
+                self.builder.position_at_end(is_zero_bb);
+                self.builder.build_unconditional_branch(continue_bb);
+
+                self.builder.position_at_end(continue_bb);
+                let phi = self.builder.build_phi(context.f64_type(), "binop_phi");
+                phi.add_incoming(&[(&context.f64_type().const_float(0.0), is_zero_bb), (&context.f64_type().const_float(1.0), is_one_bb)]);
+                phi.as_basic_value().into_float_value()
+            }
+
             _ => panic!("only arithmetic")
         };
         self.alloc(context.i8_type().const_int(FLOAT_TAG as u64, false), res, context)

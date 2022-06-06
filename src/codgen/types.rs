@@ -1,6 +1,7 @@
 use inkwell::AddressSpace;
 use inkwell::module::{Linkage, Module};
 use inkwell::values::FunctionValue;
+use crate::codgen::ValueT;
 
 pub struct Types<'ctx> {
     pub print: FunctionValue<'ctx>,
@@ -70,7 +71,7 @@ impl<'ctx> Types<'ctx> {
             free_string,
             string_to_number,
             number_to_string,
-            add_file
+            add_file,
         }
     }
 }

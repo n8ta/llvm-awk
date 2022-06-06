@@ -488,6 +488,13 @@ fn test_bangeq() {
     assert_eq!(actual, sprogram!(body));
 }
 
+#[test]
+fn test_bangeq_oo() {
+    actual!(actual, "{ 1 != 3*4 }");
+    let body = Stmt::Expr(Expr::BinOp(bnum!(1.0), BinOp::BangEq, Box::new(Expr::BinOp(bnum!(3.0), BinOp::Star, bnum!(4.0)))));
+    assert_eq!(actual, sprogram!(body));
+}
+
 
 #[test]
 fn test_cmp_oop1() {
@@ -506,6 +513,3 @@ fn test_cmp_oop2() {
     let stmt = Stmt::Assign(format!("a"), body);
     assert_eq!(actual, sprogram!(stmt));
 }
-
-
-

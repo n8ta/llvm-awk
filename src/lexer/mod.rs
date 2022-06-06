@@ -117,9 +117,6 @@ impl<'a> Lexer<'a> {
         } else {
             self.add_token(Token::Ident(src));
         }
-
-        // }
-        // };
         Ok(())
     }
     fn peek(&mut self) -> char {
@@ -204,7 +201,7 @@ impl<'a> Lexer<'a> {
             ' ' => (),
             '\n' => self.line += 1,
             _ => {
-                if c.is_digit(10) {
+                if c.is_digit(10) || (c == '-' && self.peek_next().is_digit(10)) {
                     let num = self.number()?;
                     self.add_token(num);
                 } else if c.is_alphabetic() {

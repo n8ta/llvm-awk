@@ -42,13 +42,13 @@ char* owned_string(std::string data) {
 
 // Frees a string created by owned_string
 extern "C" void free_string(char tag, double value) {
-  PRINT("Free string called tag:%d value:%g", tag, value);
+  PRINT("Free string called tag:%d value:%g\n", tag, value);
   if (tag == 1) {
     union Value myVal;
     myVal.float_value = value;
     free( (void*) myVal.str_value );
   } else {
-    printf("\tllawk compiler bug: tried to free a non-string value!");
+    printf("\tllawk compiler bug: tried to free a non-string value!\n");
   }
 }
 

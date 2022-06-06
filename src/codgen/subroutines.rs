@@ -21,8 +21,8 @@ impl<'ctx> Subroutines<'ctx> {
 
         let free_if_string = module.add_function("free_if_string", context.void_type().fn_type(ffi_type, false), None);
         let init_bb = context.append_basic_block(free_if_string, "free_string_init");
-        let free_string_bb = context.append_basic_block(free_if_string, "free_string_ffi_call");
-        let ret_bb = context.append_basic_block(free_if_string, "free_string_ret");
+        let free_string_bb = context.append_basic_block(free_if_string, "free_string_bb");
+        let ret_bb = context.append_basic_block(free_if_string, "ret_bb");
 
         // init -> free_string_bb or ret_bb
         builder.position_at_end(init_bb);

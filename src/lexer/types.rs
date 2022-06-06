@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use inkwell::FloatPredicate;
 
 #[derive(Debug, Clone, PartialOrd, PartialEq)]
 pub enum BinOp {
@@ -12,6 +13,20 @@ pub enum BinOp {
     LessEq,
     BangEq,
     EqEq,
+}
+
+impl BinOp {
+    pub fn predicate(&self) -> FloatPredicate {
+        match self {
+            BinOp::Greater => FloatPredicate::OGT,
+            BinOp::GreaterEq => FloatPredicate::OGE,
+            BinOp::Less => FloatPredicate::OLE,
+            BinOp::LessEq => FloatPredicate::OEQ,
+            BinOp::BangEq => FloatPredicate::ONE,
+            BinOp::EqEq => FloatPredicate::OEQ,
+            _ => panic!("Unsupported op"),
+        }
+    }
 }
 
 impl Display for BinOp {
