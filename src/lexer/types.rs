@@ -20,11 +20,11 @@ impl BinOp {
         match self {
             BinOp::Greater => FloatPredicate::OGT,
             BinOp::GreaterEq => FloatPredicate::OGE,
-            BinOp::Less => FloatPredicate::OLE,
-            BinOp::LessEq => FloatPredicate::OEQ,
+            BinOp::Less => FloatPredicate::OLT,
+            BinOp::LessEq => FloatPredicate::OLE,
             BinOp::BangEq => FloatPredicate::ONE,
             BinOp::EqEq => FloatPredicate::OEQ,
-            _ => panic!("Unsupported op"),
+            _ => panic!("Unsupported binop"),
         }
     }
 }

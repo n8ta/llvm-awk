@@ -80,4 +80,5 @@ test!(test_gt_false, "{ if (0 > 1) { print 123; } else {print 456;} }", ONE_LINE
 test!(test_gteq_true, "{ if (1 >= 0) { print 123; } else {print 456;} }", ONE_LINE, "123\n", 0);
 test!(test_gteq_false, "{ if (0 >= 1) { print 123; } else {print 456;} }", ONE_LINE, "456\n", 0);
 
+test!(test_while, "{ x = 0; while (x < 4) { x = x + 1; print x; } print 555; }", ONE_LINE, "1\n2\n3\n4\n555\n", 0);
 // test!(test_if_no_else_truthy, "{if (1) { print "truthy"; }}", ONE_LINE, "truthy\n", 0);

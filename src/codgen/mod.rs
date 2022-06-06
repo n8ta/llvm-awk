@@ -56,7 +56,7 @@ type ValueT<'ctx> = (PointerValue<'ctx>, PointerValue<'ctx>);
 impl<'ctx> CodeGen<'ctx> {
     fn new(context: &'ctx Context) -> Self {
         let module = context.create_module("llvm-awk");
-        let execution_engine = module.create_jit_execution_engine(OptimizationLevel::Aggressive).expect("To be able to create exec engine");
+        let execution_engine = module.create_jit_execution_engine(OptimizationLevel::None).expect("To be able to create exec engine");
         let types = Types::new(context, &module);
         let mut builder = context.create_builder();
         let subroutines = Subroutines::new(context, &module, &types, &mut builder);
@@ -77,6 +77,7 @@ impl<'ctx> CodeGen<'ctx> {
         let i64_func = i64_type.fn_type(&[], false);
         let function = self.module.add_function(ROOT, i64_func, Some(Linkage::External));
         let init_bb = context.append_basic_block(function, "init_bb");
+        self.builder.position_at_end(init_bb);
 
         // Pass list of files over to c++ side at runtime.
         // We could do this with fewer func calls
@@ -173,7 +174,8 @@ impl<'ctx> CodeGen<'ctx> {
         let tag_is_zero = self.builder.build_int_compare(IntPredicate::EQ, tag, context.i8_type().const_int(0, false), "tag_is_zero");
         let value_is_zero_f64 = self.builder.build_float_compare(FloatPredicate::OEQ, value, context.f64_type().const_float(0.0), "value_is_zero_f64");
         let zero_f64 = self.builder.build_and(value_is_zero_f64, tag_is_zero, "zero_f64");
-        self.builder.build_not(zero_f64, "predicate")
+        let result = self.builder.build_not(zero_f64, "predicate");
+        result
     }
 
     fn value_for_ffi(&mut self, result: ValueT<'ctx>) -> Vec<BasicMetadataValueEnum<'ctx>> {

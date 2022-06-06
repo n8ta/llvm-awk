@@ -1,19 +1,20 @@
+use std::collections::HashSet;
 use crate::Expr;
 use crate::parser::{Stmt};
 
-pub fn extract(prog: &Stmt) -> Vec<String> {
-    let mut vars = vec![];
+pub fn extract(prog: &Stmt) -> HashSet<String> {
+    let mut vars = HashSet::new();
     extract_stmt(prog, &mut vars);
     vars
 }
 
-fn extract_stmt(stmt: &Stmt, vars: &mut Vec<String>) {
+fn extract_stmt(stmt: &Stmt, vars: &mut HashSet<String>) {
     match stmt {
         Stmt::Expr(expr) => extract_expr(expr, vars),
         Stmt::Print(expr) => extract_expr(expr, vars),
         Stmt::Assign(var, val) => {
             extract_expr(val, vars);
-            vars.push(var.clone());
+            vars.insert(var.clone());
         }
         Stmt::Return(expr) => if let Some(expr) = expr { extract_expr(expr, vars); },
         Stmt::Group(group) => {
@@ -35,10 +36,10 @@ fn extract_stmt(stmt: &Stmt, vars: &mut Vec<String>) {
     }
 }
 
-fn extract_expr(expr: &Expr, vars: &mut Vec<String>) {
+fn extract_expr(expr: &Expr, vars: &mut HashSet<String>) {
     match expr {
-        Expr::Variable(var) => vars.push(var.clone()),
-        Expr::String(_str) => {}
+        Expr::Variable(var) => {vars.insert(var.clone());},
+        Expr::String(_str) => {},
         Expr::NumberF64(n) => {}
         Expr::BinOp(left, op, right) => {
             extract_expr(left, vars);

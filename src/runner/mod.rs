@@ -6,9 +6,9 @@ use tempfile::{tempdir, TempDir};
 
 const RUNTIME_BITCODE: &[u8] = std::include_bytes!("../../runtime.bc");
 
-pub fn run(bitcode: MemoryBuffer) {
+pub fn run(bitcode: MemoryBuffer, save_executable: Option<PathBuf>) {
     let temp_dir = tempdir().unwrap();
-    match external_tools(&temp_dir, bitcode) {
+    match external_tools(&temp_dir, bitcode, save_executable) {
         Ok(out_path) => {
             let mut child = std::process::Command::new(out_path)
                 .spawn()
@@ -24,7 +24,7 @@ pub fn run(bitcode: MemoryBuffer) {
 
 pub fn run_and_capture(bitcode: MemoryBuffer) -> (String, String, i32) {
     let temp_dir = TempDir::new().unwrap();
-    match external_tools(&temp_dir, bitcode) {
+    match external_tools(&temp_dir, bitcode, None) {
         Ok(out_path) => {
             println!("out_path {:?}", out_path);
             let res = std::process::Command::new(out_path).output().unwrap();
@@ -35,11 +35,10 @@ pub fn run_and_capture(bitcode: MemoryBuffer) -> (String, String, i32) {
     }
 }
 
-pub fn external_tools(temp_dir: &TempDir, bitcode: MemoryBuffer) -> Result<PathBuf, (String, String, i32)> {
+pub fn external_tools(temp_dir: &TempDir, bitcode: MemoryBuffer, save_executable: Option<PathBuf>) -> Result<PathBuf, (String, String, i32)> {
     let program_bc_path = temp_dir.path().join("awk.bc");
     let runtime_bc_path = temp_dir.path().join("runtime.bc");
-    let out_path = temp_dir.path().join("a.out");
-
+    let out_path = if let Some(save) = save_executable { save } else { temp_dir.path().join("a.out") };
 
     {
         let mut file = File::create(program_bc_path.clone()).unwrap();
@@ -50,7 +49,7 @@ pub fn external_tools(temp_dir: &TempDir, bitcode: MemoryBuffer) -> Result<PathB
         file.write_all(RUNTIME_BITCODE).expect(&format!("could not write to {}", runtime_bc_path.to_str().unwrap()));
     }
 
-    let args = vec![runtime_bc_path.to_str().unwrap(), program_bc_path.to_str().unwrap(), "-o", out_path.to_str().unwrap()];
+    let args = vec!["-g", runtime_bc_path.to_str().unwrap(), program_bc_path.to_str().unwrap(), "-o", out_path.to_str().unwrap()];
     println!("clang++ {:?}", args);
     let res = std::process::Command::new("clang++")
         .args(args)

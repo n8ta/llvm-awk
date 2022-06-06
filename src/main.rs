@@ -29,7 +29,7 @@ fn main() {
     };
     let ast = transform(parse(lex(&program).unwrap()));
     let bitcode = codgen::compile(ast, args.files.as_slice(), args.dump);
-    run(bitcode);
+    run(bitcode, args.save_executable);
 }
 
 // use crate::lexer::{BinOp, lex};

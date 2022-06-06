@@ -1,8 +1,11 @@
+use std::path::{Path, PathBuf};
+
 #[derive(Debug, PartialEq)]
 pub struct AwkArgs {
     pub dump: bool,
     pub program: ProgramType,
     pub files: Vec<String>,
+    pub save_executable: Option<PathBuf>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -26,8 +29,10 @@ impl ProgramType {
 }
 
 fn print_help() {
-    eprintln!("Usage: llawk [--dump] -f progfile file ...");
-    eprintln!("Usage: llawk [--dump] 'program' file ...");
+    eprintln!("Usage: llawk [--dump] [--save path] -f progfile file ...");
+    eprintln!("Usage: llawk [--dump] [--save path] 'program' file ...");
+    eprintln!("--dump: Dump the AST after parsing");
+    eprintln!("--save file_path: Save the executable to the given path");
 }
 
 impl AwkArgs {
@@ -35,6 +40,7 @@ impl AwkArgs {
         let mut dump = false;
         let mut program: Option<ProgramType> = None;
         let mut files: Vec<String> = vec![];
+        let mut save_executable: Option<PathBuf> = None;
 
         let mut i = 1;
         while i < args.len() {
@@ -42,6 +48,15 @@ impl AwkArgs {
                 "--dump" => {
                     dump = true;
                     i += 1;
+                }
+                "--save" => {
+                    if let Some(next) = args.get(i+1) {
+                        save_executable = Some(PathBuf::from(next));
+                    } else {
+                        eprintln!("Expected path after --save");
+                        return Err(());
+                    }
+                    i += 2;
                 }
                 "-f" => {
                     if program != None {
@@ -78,6 +93,6 @@ impl AwkArgs {
             }
             Some(prog) => prog
         };
-        Ok(AwkArgs { dump, program, files })
+        Ok(AwkArgs { dump, program, files, save_executable })
     }
 }

@@ -5,7 +5,7 @@
 #include <fstream>
 #include <math.h>
 
-//#define DEBUG 1
+#define DEBUG 1
 
 #ifdef DEBUG
 #define PRINT(...) do{ fprintf( stderr, __VA_ARGS__ ); } while( false )
@@ -167,13 +167,16 @@ extern "C" void print_value(char tag, double value) {
   val.float_value = value;
   PRINT("Print value called tag %c value %g\n", tag, val.float_value);
   if (tag == 0) {
+
     if (ceilf(value) == value) {
       int64_t int_value = static_cast<int>(value);
+      PRINT("\tceilf(value) == value printing int lld\n");
       printf("%lld\n", int_value);
     } else {
+      PRINT("\tceilf(value) != value printing float g\n");
       printf("%g\n", val.float_value);
     }
-    PRINT("\t Tag is == 0 DONE\n");
+    PRINT("\tTag is == 0 DONE\n");
   } else if (tag == 2 || tag == 1) {
     printf("%s\n", val.str_value);
   }
