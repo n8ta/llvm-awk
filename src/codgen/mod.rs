@@ -1,14 +1,16 @@
 mod scopes;
-mod types;
+mod runtime;
 mod subroutines;
 mod variable_extract;
 
+use std::any::Any;
 use std::collections::{HashSet};
+use std::path::{Path, PathBuf};
 use inkwell::builder::Builder;
 use inkwell::context::Context;
-use inkwell::execution_engine::{ExecutionEngine};
+use inkwell::execution_engine::{ExecutionEngine, JitFunction};
 use inkwell::module::{Linkage, Module};
-use inkwell::{FloatPredicate, IntPredicate, OptimizationLevel};
+use inkwell::{AddressSpace, FloatPredicate, IntPredicate, OptimizationLevel};
 use inkwell::basic_block::BasicBlock;
 use inkwell::memory_buffer::MemoryBuffer;
 use inkwell::types::{FloatType, IntType};
@@ -16,7 +18,7 @@ use inkwell::values::{AggregateValue, AnyValue, BasicMetadataValueEnum, BasicVal
 use crate::{BinOp, Expr};
 use crate::codgen::scopes::{ScopeInfo, Scopes};
 use crate::codgen::subroutines::Subroutines;
-use crate::codgen::types::{pad, Types};
+use crate::codgen::runtime::{pad, Runtime};
 use crate::parser::{Stmt};
 
 /// Value type
@@ -25,16 +27,28 @@ use crate::parser::{Stmt};
 /// | number f64
 /// | string
 
-pub fn compile(prog: Stmt, files: &[String], dump: bool) -> MemoryBuffer {
+pub fn compile_and_run(prog: Stmt, files: &[String], dump: bool) {
     let context = Context::create();
     let mut codegen = CodeGen::new(&context);
-    codegen.compile(prog, &context, files, dump)
+    codegen.compile(prog, &context, files, dump);
+    codegen.run()
+}
+
+pub fn compile_to_bc(prog: Stmt, files: &[String], output_path: PathBuf) {
+    let context = Context::create();
+    let mut codegen = CodeGen::new(&context);
+    codegen.compile(prog, &context, files, false);
+    codegen.write_to_file(output_path);
 }
 
 pub enum Value {
     Float(f64),
     ConstString(String),
 }
+
+type RootT = unsafe extern "C" fn() -> i64;
+
+const RUNTIME_BITCODE: &[u8] = std::include_bytes!("../../runtime.bc");
 
 const ROOT: &'static str = "main";
 const FLOAT_TAG: u8 = 0;
@@ -47,7 +61,7 @@ struct CodeGen<'ctx> {
     builder: Builder<'ctx>,
     execution_engine: ExecutionEngine<'ctx>,
     scopes: Scopes<'ctx>,
-    types: Types<'ctx>,
+    runtime: Runtime<'ctx>,
     subroutines: Subroutines<'ctx>,
 }
 
@@ -56,24 +70,53 @@ type ValueT<'ctx> = (IntValue<'ctx>, FloatValue<'ctx>);
 
 impl<'ctx> CodeGen<'ctx> {
     fn new(context: &'ctx Context) -> Self {
-        let module = context.create_module("llvm-awk");
-        let execution_engine = module.create_jit_execution_engine(OptimizationLevel::Aggressive).expect("To be able to create exec engine");
-        let types = Types::new(context, &module);
+        let module = MemoryBuffer::create_from_file(Path::new("./runtime.bc")).expect("to load runtime");//RUNTIME_BITCODE, "runtime");
+        let module = Module::parse_bitcode_from_buffer(&module, context).unwrap();
+        // let module = context.create_module("llvm-awk");
+        // let module = {
+        //     runtime.verify().expect("runtime to veirfy");
+        //
+        //     module.link_in_module(runtime).expect("failed to link cpp runtime");
+        //     module.verify().expect("module with runtime to verify");
+        //     module
+        // };
+
+        let execution_engine = module.create_execution_engine().expect("To be able to create exec engine");
+        // execution_engine.add_module(&module).expect("to be able to add runtime to ee");
+        // module.link_in_module(runtime).expect("to be able to link in runtime");
+        let runtime = Runtime::new(context, &module);
         let mut builder = context.create_builder();
-        let subroutines = Subroutines::new(context, &module, &types, &mut builder);
+        let subroutines = Subroutines::new(context, &module, &runtime, &mut builder);
 
         let codegen = CodeGen {
             module,
             builder,
             execution_engine,
-            types,
+            runtime,
             scopes: Scopes::new(),
             subroutines,
         };
         codegen
     }
 
-    fn compile(&mut self, prog: Stmt, context: &'ctx Context, files: &[String], dump: bool) -> MemoryBuffer {
+    fn run(&mut self) {
+        println!("module verifies: {:?}", self.module.verify());
+        ExecutionEngine::link_in_mc_jit();
+        // self.execution_engine.link_in_mc_jit();
+        let main = self.module.get_function(ROOT).unwrap();
+        unsafe {
+            let res= self.execution_engine.run_function(main, &[]);
+            // let func: JitFunction<RootT> = self.execution_engine.get_function(ROOT).ok().expect("ROOT function not found");
+            // let res = func.call();
+        }
+    }
+    fn write_to_file(&self, path_buf: PathBuf) {
+        if !self.module.write_bitcode_to_path(path_buf.as_path()) {
+            panic!("Couldn't write bitcode to path")
+        }
+    }
+
+    fn compile(&mut self, prog: Stmt, context: &'ctx Context, files: &[String], dump: bool) {
         let i64_type = context.i64_type();
         let i64_func = i64_type.fn_type(&[], false);
         let function = self.module.add_function(ROOT, i64_func, Some(Linkage::External));
@@ -89,15 +132,23 @@ impl<'ctx> CodeGen<'ctx> {
             let const_str = context.const_string(path.as_bytes(), true);
             let malloced_array = self.builder.build_alloca(const_str.get_type(), "file_path string alloc");
             self.builder.build_store(malloced_array, const_str);
-            self.builder.build_call(self.types.add_file, &[malloced_array.into()], "add file");
+
+            let i8_ptr_type = context.i8_type().ptr_type(AddressSpace::Generic);
+            let array_as_i8_ptr = self.builder.build_cast(
+                InstructionOpcode::BitCast,
+                malloced_array,
+                i8_ptr_type,
+                "cast to i8*");
+            self.builder.build_call(self.runtime.add_file, &[array_as_i8_ptr.into()], "add file");
         }
-        self.builder.build_call(self.types.init, &[], "done adding files call init!");
+        self.builder.build_call(self.runtime.init, &[], "done adding files call init!");
 
         self.define_all_vars(&prog, context);
         let final_bb = self.compile_stmt(&prog, context);
 
         self.builder.position_at_end(final_bb);
         // If the last instruction isn't a return, add one and return 0
+
         let zero = context.i64_type().const_int(0, false);
         match self.builder.get_insert_block().unwrap().get_last_instruction() {
             None => { self.builder.build_return(Some(&zero)); } // No instructions in the block
@@ -112,13 +163,6 @@ impl<'ctx> CodeGen<'ctx> {
         if dump {
             println!("{}", self.module.print_to_string().to_string().replace("\\n", "\n"));
         }
-        // unsafe {
-        //     println!("getting root func");
-        //     let root: JitFunction<RootFunc> = self.execution_engine.get_function(ROOT).unwrap();
-        //     println!("calling root func");
-        //     root.call();
-        // }
-        self.module.write_bitcode_to_memory()
     }
 
     fn alloc(&mut self, tag: IntValue<'ctx>, value: FloatValue<'ctx>, context: &'ctx Context) -> (PointerValue<'ctx>, PointerValue<'ctx>) {
@@ -139,7 +183,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let num_f64 = context.f64_type().const_float(num);
                 let one_i8 = context.i8_type().const_int(FLOAT_TAG as u64, false);
                 (one_i8, num_f64)
-            },
+            }
             Value::ConstString(value) => {
                 let name = format!("const-str-{}", value);
                 let global_value = self.builder.build_global_string_ptr(&value, &name);
@@ -217,7 +261,7 @@ impl<'ctx> CodeGen<'ctx> {
             Stmt::Print(expr) => {
                 let result = self.compile_expr(expr, context);
                 let result = self.value_for_ffi(result);
-                self.builder.build_call(self.types.print, &result, "print_value_call");
+                self.builder.build_call(self.runtime.print, &result, "print_value_call");
             }
             Stmt::Assign(name, expr) => {
                 let fin = self.compile_expr(expr, context);
@@ -292,7 +336,7 @@ impl<'ctx> CodeGen<'ctx> {
             }
             Expr::Variable(str) => {
                 self.load(self.scopes.lookup(str).expect("to be defined"))
-            }, // todo: default value
+            } // todo: default value
             Expr::NumberF64(num) => {
                 self.create_value(Value::Float(*num), context)
             }
@@ -309,13 +353,13 @@ impl<'ctx> CodeGen<'ctx> {
             Expr::Column(expr) => {
                 let res = self.compile_expr(expr, context);
                 let args = self.value_for_ffi(res);
-                let float_ptr = self.builder.build_call(self.types.column, &args, "get_column");
+                let float_ptr = self.builder.build_call(self.runtime.column, &args, "get_column");
                 let one = context.i8_type().const_int(1, false);
                 (one, float_ptr.as_any_value_enum().into_float_value())
             }
             Expr::LogicalOp(_, _, _) => { panic!("logic not done yet") }
             Expr::Call => {
-                let next_line_res = self.builder.build_call(self.types.next_line, &[], "get_next_line").as_any_value_enum().into_float_value();
+                let next_line_res = self.builder.build_call(self.runtime.next_line, &[], "get_next_line").as_any_value_enum().into_float_value();
                 (context.i8_type().const_int(FLOAT_TAG as u64, false), next_line_res)
             }
         }
@@ -400,7 +444,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         self.builder.position_at_end(not_number_bb);
         let args = self.value_for_ffi((tag, value));
-        let number: FloatValue = self.builder.build_call(self.types.string_to_number, &args, "string_to_number").as_any_value_enum().into_float_value();
+        let number: FloatValue = self.builder.build_call(self.runtime.string_to_number, &args, "string_to_number").as_any_value_enum().into_float_value();
         self.builder.build_unconditional_branch(done_bb);
 
         self.builder.position_at_end(done_bb);
@@ -438,7 +482,7 @@ impl<'ctx> CodeGen<'ctx> {
                 self.builder.position_at_end(continue_bb);
                 let phi = self.builder.build_phi(context.f64_type(), "binop_phi");
                 phi.add_incoming(&[(&context.f64_type().const_float(0.0), is_zero_bb), (&context.f64_type().const_float(1.0), is_one_bb)]);
-                return phi.as_basic_value().into_float_value()
+                return phi.as_basic_value().into_float_value();
             }
 
             _ => panic!("only arithmetic")

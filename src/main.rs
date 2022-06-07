@@ -1,7 +1,6 @@
-use crate::args::AwkArgs;
+use crate::args::{AwkArgs, ProgramType};
 use crate::lexer::{BinOp, lex};
 use crate::parser::{Expr, parse};
-use crate::runner::run;
 use crate::transformer::transform;
 
 mod parser;
@@ -15,10 +14,16 @@ mod transformer;
 
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    let args = match AwkArgs::new(args) {
-        Ok(args) => args,
-        Err(_)=> return,
+    // let args: Vec<String> = std::env::args().collect();
+    // let args = match AwkArgs::new(args) {
+    //     Ok(args) => args,
+    //     Err(_) => return,
+    // };
+    let args = AwkArgs {
+        dump: false,
+        program: ProgramType::CLI("{print 1}".to_string()),
+        files: vec!["one_line.txt".to_string()],
+        save_executable: None
     };
     let program = match args.program.load() {
         Ok(program) => program,
@@ -27,9 +32,12 @@ fn main() {
             return;
         }
     };
-    let ast = transform(parse(lex(&program).unwrap()));
-    let bitcode = codgen::compile(ast, args.files.as_slice(), args.dump);
-    run(bitcode, args.save_executable);
+    codgen::compile_and_run(
+        transform(
+            parse(
+                lex(&program).unwrap())),
+        &args.files,
+        args.dump);
 }
 
 // use crate::lexer::{BinOp, lex};

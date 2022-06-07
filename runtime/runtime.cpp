@@ -216,5 +216,6 @@ extern "C" double number_to_string(char tag, double value) {
 
 // something llvm will probably not optimize out. Handy at times to see full IR.
 extern "C" double get_float() {
+  PRINT("get_float called\n");
   return 2.2;
 }

@@ -3,20 +3,20 @@ use inkwell::context::Context;
 use inkwell::IntPredicate;
 use inkwell::module::Module;
 use inkwell::values::FunctionValue;
-use crate::codgen::types::Types;
+use crate::codgen::runtime::Runtime;
 
 pub struct Subroutines<'ctx> {
     pub free_if_string: FunctionValue<'ctx>,
 }
 
 impl<'ctx> Subroutines<'ctx> {
-    pub fn new(context: &'ctx Context, module: &Module<'ctx>, types: &Types<'ctx>, builder: &mut Builder) -> Self {
-        let free_if_string = Subroutines::build_free_if_string(context, module, types, builder);
+    pub fn new(context: &'ctx Context, module: &Module<'ctx>, runtime: &Runtime<'ctx>, builder: &mut Builder) -> Self {
+        let free_if_string = Subroutines::build_free_if_string(context, module, runtime, builder);
         Subroutines {
             free_if_string
         }
     }
-    fn build_free_if_string(context: &'ctx Context, module: &Module<'ctx>, types: &Types<'ctx>, builder: &mut Builder) -> FunctionValue<'ctx> {
+    fn build_free_if_string(context: &'ctx Context, module: &Module<'ctx>, runtime: &Runtime<'ctx>, builder: &mut Builder) -> FunctionValue<'ctx> {
         let ffi_type = &[context.i8_type().into(), context.f64_type().into()];
 
         let free_if_string = module.add_function("free_if_string", context.void_type().fn_type(ffi_type, false), None);
@@ -33,7 +33,7 @@ impl<'ctx> Subroutines<'ctx> {
 
         // free the string
         builder.position_at_end(free_string_bb);
-        builder.build_call(types.free_string, &[tag.into(), value.into()], "call_free");
+        builder.build_call(runtime.free_string, &[tag.into(), value.into()], "call_free");
         builder.build_return(None);
 
         // ret

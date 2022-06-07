@@ -1,25 +1,23 @@
 use tempfile::{tempdir};
 use crate::{lex, parse, transform};
-use crate::codgen::compile;
-use crate::runner::{run_and_capture};
+use crate::codgen::{compile_to_bc};
+use crate::runner::{capture};
 
 const ONE_LINE: &'static str = "1 2 3\n";
 const NUMBERS: &'static str = "1 2 3\n4 5 6\n7 8 9";
 const FLOAT_NUMBERS: &'static str = "1.1 2.2 3.3\n4.4 5.5 6.6\n7.7 8.8 9.9";
 
-fn run_it(program: &str, file: &str) -> (String, String, i32) {
-    let temp_dir = tempdir().unwrap();
-    let temp_path = temp_dir.path().join("temp_file");
-    std::fs::write(&temp_path, file.as_bytes()).unwrap();
-    let temp_path_str = temp_path.to_str().unwrap().to_string();
-    let r = run_and_capture(compile(transform(parse(lex(program).unwrap())), &[temp_path_str], true));
-    r
-}
 
 fn test_it(program: &str, file: &str, output: &str, status_code: i32) {
     println!("====PROGRAM====\n{}\n=====DATA=====\n{}\n=====EXPECTED======\n{}============", program, file, output);
 
-    let (stdout, stderr, status) = run_it(program, file);
+    let ast = transform(parse(lex(program).unwrap()));
+
+    let temp_dir = tempdir().unwrap();
+    let file_path = temp_dir.path().join(file);
+    std::fs::write(file_path.clone(), file).unwrap();
+
+    let (stdout, stderr, status) = capture(ast, &[file_path.to_str().unwrap().to_string()]);
     println!("=====STATUS {}======\n=======STDOUT======\n{}======STDERRR======\n{}=====EXPECTED======\n{}", status, stdout.replace("\\n", "\n"), stderr.replace("\\n", "\n"), output);
     println!("test complete for {}", program);
     assert_eq!(status, status_code);
