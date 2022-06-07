@@ -57,7 +57,7 @@ type ValueT<'ctx> = (IntValue<'ctx>, FloatValue<'ctx>);
 impl<'ctx> CodeGen<'ctx> {
     fn new(context: &'ctx Context) -> Self {
         let module = context.create_module("llvm-awk");
-        let execution_engine = module.create_jit_execution_engine(OptimizationLevel::None).expect("To be able to create exec engine");
+        let execution_engine = module.create_jit_execution_engine(OptimizationLevel::Aggressive).expect("To be able to create exec engine");
         let types = Types::new(context, &module);
         let mut builder = context.create_builder();
         let subroutines = Subroutines::new(context, &module, &types, &mut builder);

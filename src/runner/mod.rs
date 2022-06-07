@@ -2,18 +2,26 @@ use std::path::{PathBuf};
 use inkwell::memory_buffer::MemoryBuffer;
 use std::fs::File;
 use std::io::{Read, Write};
+use std::time::Instant;
 use tempfile::{tempdir, TempDir};
-
+use timeit::timeit_loops;
 const RUNTIME_BITCODE: &[u8] = std::include_bytes!("../../runtime.bc");
 
+
+
 pub fn run(bitcode: MemoryBuffer, save_executable: Option<PathBuf>) {
+    let start = Instant::now();
     let temp_dir = tempdir().unwrap();
+    println!("time to make temp dir: {}", start.elapsed().as_millis());
+
     match external_tools(&temp_dir, bitcode, save_executable) {
         Ok(out_path) => {
+            let start = Instant::now();
             let mut child = std::process::Command::new(out_path)
                 .spawn()
                 .expect("to launch awk process");
             child.wait().expect("for awk program to complete normally");
+            println!("time running final prog: {}", start.elapsed().as_millis());
         }
         Err(err) => {
             println!("{}", err.0);
@@ -40,6 +48,7 @@ pub fn external_tools(temp_dir: &TempDir, bitcode: MemoryBuffer, save_executable
     let runtime_bc_path = temp_dir.path().join("runtime.bc");
     let out_path = if let Some(save) = save_executable { save } else { temp_dir.path().join("a.out") };
 
+    let start = Instant::now();
     {
         let mut file = File::create(program_bc_path.clone()).unwrap();
         file.write_all(bitcode.as_slice()).expect(&format!("could not write to {}", program_bc_path.to_str().unwrap()));
@@ -48,12 +57,17 @@ pub fn external_tools(temp_dir: &TempDir, bitcode: MemoryBuffer, save_executable
         let mut file = File::create(runtime_bc_path.clone()).unwrap();
         file.write_all(RUNTIME_BITCODE).expect(&format!("could not write to {}", runtime_bc_path.to_str().unwrap()));
     }
+    println!("time to write bc files: {}", start.elapsed().as_millis());
 
     let args = vec!["-g", runtime_bc_path.to_str().unwrap(), program_bc_path.to_str().unwrap(), "-o", out_path.to_str().unwrap()];
     println!("clang++ {:?}", args);
+
+    let start = Instant::now();
     let res = std::process::Command::new("clang++")
         .args(args)
         .output().expect("to be able to link with clang");
+    println!("time to call clang: {}", start.elapsed().as_millis());
+
 
     if res.status.code() != Some(0) {
         eprintln!("clang++ failed to compile bitcode");

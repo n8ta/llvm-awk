@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm13-0"] }
 tempfile = "3.3.0"
+timeit = "0.1.2"
 
 [[bin]]
 name = "llvm-awk"
