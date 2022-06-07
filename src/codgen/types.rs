@@ -1,7 +1,7 @@
 use inkwell::AddressSpace;
 use inkwell::module::{Linkage, Module};
 use inkwell::values::FunctionValue;
-use crate::codgen::ValueT;
+use crate::codgen::ValuePtrT;
 
 pub struct Types<'ctx> {
     pub print: FunctionValue<'ctx>,

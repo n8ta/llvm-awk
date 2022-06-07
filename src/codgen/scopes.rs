@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use crate::codgen::ValueT;
+use crate::codgen::ValuePtrT;
 
-pub type ScopeInfo<'ctx> = HashMap<String, ValueT<'ctx>>;
+pub type ScopeInfo<'ctx> = HashMap<String, ValuePtrT<'ctx>>;
 
 pub struct Scope<'ctx> {
     pub values: ScopeInfo<'ctx>,
@@ -16,11 +16,11 @@ impl<'ctx> Scopes<'ctx> {
         let scope = Scope { values: HashMap::default() };
         Scopes { scopes: vec![scope] }
     }
-    pub fn insert(&mut self, name: String, value: ValueT<'ctx>) {
+    pub fn insert(&mut self, name: String, value: ValuePtrT<'ctx>) {
         self.scopes.last_mut().unwrap().values.insert(name, value);
     }
     #[allow(dead_code)]
-    pub fn get(&self, name: &str) -> Option<&ValueT<'ctx>> {
+    pub fn get(&self, name: &str) -> Option<&ValuePtrT<'ctx>> {
         for scope in self.scopes.iter().rev() {
             if let Some(val) = scope.values.get(name) {
                 return Some(val);
@@ -34,7 +34,7 @@ impl<'ctx> Scopes<'ctx> {
     pub fn end_scope(&mut self) -> ScopeInfo<'ctx> {
         self.scopes.pop().unwrap().values
     }
-    pub fn lookup(&self, name: &str) -> Option<ValueT<'ctx>> {
+    pub fn lookup(&self, name: &str) -> Option<ValuePtrT<'ctx>> {
         for scope in self.scopes.iter().rev() {
             if let Some(val) = scope.values.get(name) {
                 return Some(val.clone());

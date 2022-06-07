@@ -51,7 +51,8 @@ struct CodeGen<'ctx> {
     subroutines: Subroutines<'ctx>,
 }
 
-type ValueT<'ctx> = (PointerValue<'ctx>, PointerValue<'ctx>);
+type ValuePtrT<'ctx> = (PointerValue<'ctx>, PointerValue<'ctx>);
+type ValueT<'ctx> = (IntValue<'ctx>, FloatValue<'ctx>);
 
 impl<'ctx> CodeGen<'ctx> {
     fn new(context: &'ctx Context) -> Self {
@@ -135,18 +136,16 @@ impl<'ctx> CodeGen<'ctx> {
 
         match value {
             Value::Float(num) => {
-                self.alloc(zero_i8, context.f64_type().const_float(num), context)
-            }
+                let num_f64 = context.f64_type().const_float(num);
+                let one_i8 = context.i8_type().const_int(FLOAT_TAG as u64, false);
+                (one_i8, num_f64)
+            },
             Value::ConstString(value) => {
                 let name = format!("const-str-{}", value);
                 let global_value = self.builder.build_global_string_ptr(&value, &name);
                 let global_ptr = global_value.as_pointer_value();
                 let float_ptr = self.cast_ptr_to_float(global_ptr, context);
-                let tag_ptr = self.builder.build_alloca(context.i8_type(), "const-str-tag");
-                let value_ptr = self.builder.build_alloca(context.f64_type(), "const-str-value");
-                self.builder.build_store(tag_ptr, two_i8);
-                self.builder.build_store(value_ptr, float_ptr);
-                (tag_ptr, value_ptr)
+                (two_i8, float_ptr)
             }
         }
     }
@@ -161,7 +160,7 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn load(&mut self, value: ValueT<'ctx>) -> (IntValue<'ctx>, FloatValue<'ctx>) {
+    fn load(&mut self, value: ValuePtrT<'ctx>) -> (IntValue<'ctx>, FloatValue<'ctx>) {
         let (tag, value) = value;
         let tag = self.builder.build_load(tag, "tag").as_any_value_enum().into_int_value();
         let value = self.builder.build_load(value, "value").as_any_value_enum().into_float_value();
@@ -169,8 +168,7 @@ impl<'ctx> CodeGen<'ctx> {
     }
 
     fn compile_to_bool(&mut self, expr: &Expr, context: &'ctx Context) -> IntValue<'ctx> {
-        let result = self.compile_expr(expr, context);
-        let (tag, value) = self.load(result);
+        let (tag, value) = self.compile_expr(expr, context);
         let tag_is_zero = self.builder.build_int_compare(IntPredicate::EQ, tag, context.i8_type().const_int(0, false), "tag_is_zero");
         let value_is_zero_f64 = self.builder.build_float_compare(FloatPredicate::OEQ, value, context.f64_type().const_float(0.0), "value_is_zero_f64");
         let zero_f64 = self.builder.build_and(value_is_zero_f64, tag_is_zero, "zero_f64");
@@ -178,10 +176,14 @@ impl<'ctx> CodeGen<'ctx> {
         result
     }
 
-    fn value_for_ffi(&mut self, result: ValueT<'ctx>) -> Vec<BasicMetadataValueEnum<'ctx>> {
+    fn value_for_ffi_ptr(&mut self, result: ValuePtrT<'ctx>) -> Vec<BasicMetadataValueEnum<'ctx>> {
         let (tag, value) = self.load(result);
         return vec![tag.into(), value.into()];
     }
+    fn value_for_ffi(&mut self, result: ValueT<'ctx>) -> Vec<BasicMetadataValueEnum<'ctx>> {
+        return vec![result.0.into(), result.1.into()];
+    }
+
 
     fn compile_stmt(&mut self, stmt: &Stmt, context: &'ctx Context) -> BasicBlock<'ctx> {
         match stmt {
@@ -220,9 +222,8 @@ impl<'ctx> CodeGen<'ctx> {
             Stmt::Assign(name, expr) => {
                 let fin = self.compile_expr(expr, context);
                 if let Some(existing) = self.scopes.lookup(name) {
-                    let args = self.value_for_ffi(existing);
+                    let args = self.value_for_ffi_ptr(existing);
                     self.builder.build_call(self.subroutines.free_if_string, &args, "call-free-if-str");
-                    let fin = self.load(fin);
                     self.builder.build_store(existing.0, fin.0);
                     self.builder.build_store(existing.1, fin.1);
                 } else {
@@ -289,7 +290,9 @@ impl<'ctx> CodeGen<'ctx> {
             Expr::String(str) => {
                 self.create_value(Value::ConstString(str.clone()), context)
             }
-            Expr::Variable(str) => self.scopes.lookup(str).expect("to be defined"), // todo: default value
+            Expr::Variable(str) => {
+                self.load(self.scopes.lookup(str).expect("to be defined"))
+            }, // todo: default value
             Expr::NumberF64(num) => {
                 self.create_value(Value::Float(*num), context)
             }
@@ -299,19 +302,21 @@ impl<'ctx> CodeGen<'ctx> {
 
                 let (l, _l_final_bb) = self.build_to_number(l, context);
                 let (r, _r_final_bb) = self.build_to_number(r, context);
-                self.build_f64_binop(l, r, op, context)
+                let tag = context.i8_type().const_int(FLOAT_TAG as u64, false);
+                let float = self.build_f64_binop(l, r, op, context);
+                (tag, float)
             }
             Expr::Column(expr) => {
                 let res = self.compile_expr(expr, context);
                 let args = self.value_for_ffi(res);
                 let float_ptr = self.builder.build_call(self.types.column, &args, "get_column");
                 let one = context.i8_type().const_int(1, false);
-                self.alloc(one, float_ptr.as_any_value_enum().into_float_value(), context)
+                (one, float_ptr.as_any_value_enum().into_float_value())
             }
             Expr::LogicalOp(_, _, _) => { panic!("logic not done yet") }
             Expr::Call => {
                 let next_line_res = self.builder.build_call(self.types.next_line, &[], "get_next_line").as_any_value_enum().into_float_value();
-                self.alloc(context.i8_type().const_int(FLOAT_TAG as u64, false), next_line_res, context)
+                (context.i8_type().const_int(FLOAT_TAG as u64, false), next_line_res)
             }
         }
     }
@@ -381,7 +386,7 @@ impl<'ctx> CodeGen<'ctx> {
     //     }
     // }
 
-    fn build_to_number(&mut self, value_ptrs: ValueT<'ctx>, context: &'ctx Context) -> (FloatValue<'ctx>, BasicBlock<'ctx>) {
+    fn build_to_number(&mut self, value: ValueT<'ctx>, context: &'ctx Context) -> (FloatValue<'ctx>, BasicBlock<'ctx>) {
         // Get ROOT function
         let root = self.module.get_function(ROOT).expect("root to exist");
         // Basic blocks for not number and number
@@ -389,12 +394,12 @@ impl<'ctx> CodeGen<'ctx> {
         let not_number_bb = context.append_basic_block(root, "not_number");
         let done_bb = context.append_basic_block(root, "done_bb");
 
-        let (tag, value) = self.load(value_ptrs);
+        let (tag, value) = value;
         let cmp = self.builder.build_int_compare(IntPredicate::EQ, context.i8_type().const_int(0, false), tag, "is_zero");
         self.builder.build_conditional_branch(cmp, done_bb, not_number_bb);
 
         self.builder.position_at_end(not_number_bb);
-        let args = self.value_for_ffi(value_ptrs);
+        let args = self.value_for_ffi((tag, value));
         let number: FloatValue = self.builder.build_call(self.types.string_to_number, &args, "string_to_number").as_any_value_enum().into_float_value();
         self.builder.build_unconditional_branch(done_bb);
 
@@ -405,9 +410,9 @@ impl<'ctx> CodeGen<'ctx> {
         (phi.as_basic_value().into_float_value(), done_bb)
     }
 
-    fn build_f64_binop(&mut self, left_float: FloatValue<'ctx>, right_float: FloatValue<'ctx>, op: &BinOp, context: &'ctx Context) -> ValueT<'ctx> {
+    fn build_f64_binop(&mut self, left_float: FloatValue<'ctx>, right_float: FloatValue<'ctx>, op: &BinOp, context: &'ctx Context) -> FloatValue<'ctx> {
         let name = "both-f64-binop-tag";
-        let res = match op {
+        match op {
             BinOp::Minus => self.builder.build_float_sub(left_float, right_float, name),
             BinOp::Plus => self.builder.build_float_add(left_float, right_float, name),
             BinOp::Slash => self.builder.build_float_div(left_float, right_float, name),
@@ -417,15 +422,10 @@ impl<'ctx> CodeGen<'ctx> {
                 let predicate = op.predicate();
                 let result = self.builder.build_float_compare(predicate, left_float, right_float, name);
 
-                let result_tag = self.builder.build_alloca(context.i8_type(), &format!("{}_result", name));
-                let result_value = self.builder.build_alloca(context.f64_type(), &format!("{}_result", name));
-
                 let root = self.module.get_function(ROOT).expect("root to exist");
                 let is_zero_bb = context.append_basic_block(root, "binop_zero");
                 let is_one_bb = context.append_basic_block(root, "binop_one");
                 let continue_bb = context.append_basic_block(root, "binop_cont");
-
-                self.builder.build_store(result_tag, context.i8_type().const_int(FLOAT_TAG as u64, false));
 
                 self.builder.build_conditional_branch(result, is_one_bb, is_zero_bb);
 
@@ -438,12 +438,10 @@ impl<'ctx> CodeGen<'ctx> {
                 self.builder.position_at_end(continue_bb);
                 let phi = self.builder.build_phi(context.f64_type(), "binop_phi");
                 phi.add_incoming(&[(&context.f64_type().const_float(0.0), is_zero_bb), (&context.f64_type().const_float(1.0), is_one_bb)]);
-                phi.as_basic_value().into_float_value()
+                return phi.as_basic_value().into_float_value()
             }
 
             _ => panic!("only arithmetic")
-        };
-        self.alloc(context.i8_type().const_int(FLOAT_TAG as u64, false), res, context)
-        // (context.i8_type().const_int(FLOAT_TAG as u64, false), res)
+        }
     }
 }
