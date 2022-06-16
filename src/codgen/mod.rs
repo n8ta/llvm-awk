@@ -12,6 +12,7 @@ use crate::codgen::scopes::{ScopeInfo, Scopes};
 // use crate::codgen::subroutines::Subroutines;
 // use crate::codgen::runtime::{pad, Runtime};
 use crate::parser::{Stmt};
+use crate::runtime::hello_world;
 
 /// Value type
 ///
@@ -40,12 +41,11 @@ const STRING_TAG: u8 = 1;
 // Should be freed upon overwrite
 const CONST_STRING_TAG: u8 = 2; // Should not
 
-struct CodeGen<'ctx> {
+struct CodeGen {
     function: Function,
     scopes: Scopes,
     context: Context,
 }
-
 
 type ValueT = (Value, Value);
 type ValuePtrT = ValueT;
@@ -64,7 +64,7 @@ impl CodeGen {
 
     fn run(&mut self) {
         let function: extern "C" fn(f64) -> f64 = self.function.to_closure();
-        let res = function();
+        let res = function(123.123);
         println!("function returned {}", res);
     }
 
@@ -74,6 +74,7 @@ impl CodeGen {
         // self.compile_stmt(&prog, context);
 
         let zero = self.function.create_float64_constant(0.0);
+        self.function.insn_call_native(hello_world as *mut std::os::raw::c_void, vec![]);
         self.function.insn_return(zero);
 
         self.context.build_end();

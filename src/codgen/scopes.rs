@@ -34,12 +34,12 @@ impl Scopes {
     pub fn end_scope(&mut self) -> ScopeInfo {
         self.scopes.pop().unwrap().values
     }
-    pub fn lookup(&self, name: &str) -> Option<ValuePtrT> {
-        for scope in self.scopes.iter().rev() {
-            if let Some(val) = scope.values.get(name) {
-                return Some(val.clone());
-            }
-        }
-        None
-    }
+    // pub fn lookup(&self, name: &str) -> Option<ValuePtrT> {
+    //     for scope in self.scopes.iter().rev() {
+    //         if let Some(val) = scope.values.get(name) {
+    //             return Some(*val)clone());
+    //         }
+    //     }
+    //     None
+    // }
 }
