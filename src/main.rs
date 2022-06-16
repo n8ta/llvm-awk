@@ -38,7 +38,7 @@ fn main() {
             parse(
                 lex(&program).unwrap())),
         &args.files,
-        args.dump);
+        args.dump, false);
 }
 
 // use crate::lexer::{BinOp, lex};

@@ -12,7 +12,7 @@ use crate::codgen::scopes::{ScopeInfo, Scopes};
 // use crate::codgen::subroutines::Subroutines;
 // use crate::codgen::runtime::{pad, Runtime};
 use crate::parser::{Stmt};
-use crate::runtime::hello_world;
+use crate::runtime::{hello_world, Runtime};
 
 /// Value type
 ///
@@ -20,8 +20,8 @@ use crate::runtime::hello_world;
 /// | number f64
 /// | string
 
-pub fn compile_and_run(prog: Stmt, files: &[String], dump: bool) {
-    let mut codegen = CodeGen::new();
+pub fn compile_and_run(prog: Stmt, files: &[String], dump: bool, capture: bool) {
+    let mut codegen = CodeGen::new(files.to_vec(), capture);
     codegen.compile(prog, files, dump);
     codegen.run()
 }
@@ -31,33 +31,31 @@ pub enum Value {
     ConstString(String),
 }
 
-type RootT = unsafe extern "C" fn() -> i64;
 
-const RUNTIME_BITCODE: &[u8] = std::include_bytes!("../../runtime.bc");
-
-const ROOT: &'static str = "main";
-const FLOAT_TAG: u8 = 0;
-const STRING_TAG: u8 = 1;
-// Should be freed upon overwrite
-const CONST_STRING_TAG: u8 = 2; // Should not
+pub const FLOAT_TAG: u8 = 0;
+pub const STRING_TAG: u8 = 1;
+pub const CONST_STRING_TAG: u8 = 2; // Should not
 
 struct CodeGen {
     function: Function,
     scopes: Scopes,
     context: Context,
+    runtime: Runtime,
 }
 
 type ValueT = (Value, Value);
 type ValuePtrT = ValueT;
 
 impl CodeGen {
-    fn new() -> Self {
+    fn new(files: Vec<String>, capture: bool) -> Self {
         let mut context = Context::new();
         let function = context.function(Abi::Cdecl, Context::float64_type(), vec![]).expect("to create function");
+        let runtime = Runtime::new(files, capture);
         let codegen = CodeGen {
             function,
             scopes: Scopes::new(),
             context,
+            runtime,
         };
         codegen
     }
@@ -69,12 +67,9 @@ impl CodeGen {
     }
 
     fn compile(&mut self, prog: Stmt, files: &[String], dump: bool) {
-
-        // self.define_all_vars(&prog, context);
-        // self.compile_stmt(&prog, context);
-
         let zero = self.function.create_float64_constant(0.0);
-        self.function.insn_call_native(hello_world as *mut std::os::raw::c_void, vec![]);
+        let runtime_data_const = self.function.create_void_ptr_constant(self.runtime.data_ptr());
+        self.function.insn_call_native(hello_world as *mut std::os::raw::c_void, vec![runtime_data_const]);
         self.function.insn_return(zero);
 
         self.context.build_end();
