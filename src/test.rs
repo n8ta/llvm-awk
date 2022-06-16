@@ -1,6 +1,5 @@
 use tempfile::{tempdir};
 use crate::{lex, parse, transform};
-use crate::codgen::{compile_to_bc};
 use crate::runner::{capture};
 
 const ONE_LINE: &'static str = "1 2 3\n";
