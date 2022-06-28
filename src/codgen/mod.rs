@@ -3,16 +3,12 @@ mod scopes;
 // mod subroutines;
 mod variable_extract;
 
-use std::any::Any;
-use std::collections::{HashSet};
-use std::path::{Path, PathBuf};
-use gnu_libjit::{Abi, Context, Function, JitType};
-use crate::{BinOp, Expr};
-use crate::codgen::scopes::{ScopeInfo, Scopes};
-// use crate::codgen::subroutines::Subroutines;
-// use crate::codgen::runtime::{pad, Runtime};
-use crate::parser::{Stmt};
-use crate::runtime::{hello_world, Runtime};
+use std::os::raw::{c_char, c_void};
+use gnu_libjit::{Abi, Context, Function, Label, Value};
+use crate::{Expr};
+use crate::codgen::scopes::Scopes;
+use crate::parser::{Stmt, TypedExpr};
+use crate::runtime::{Runtime};
 
 /// Value type
 ///
@@ -26,21 +22,23 @@ pub fn compile_and_run(prog: Stmt, files: &[String], dump: bool, capture: bool) 
     codegen.run()
 }
 
-pub enum Value {
-    Float(f64),
-    ConstString(String),
-}
-
-
 pub const FLOAT_TAG: u8 = 0;
-pub const STRING_TAG: u8 = 1;
-pub const CONST_STRING_TAG: u8 = 2; // Should not
+pub const VAR_STRING_TAG: u8 = 1; // String that comes from a variable
+pub const CONST_STRING_TAG: u8 = 2; // String that appears in the program source
+
+// A string that is the result of a temporary computation
+// a = "abc" "def"
+// abc and def are CONST_STRING_TAG and "abcdef" is TMP_STRING_TAG
+pub const TMP_STRING_TAG: u8 = 3;
+
+
 
 struct CodeGen {
     function: Function,
     scopes: Scopes,
     context: Context,
     runtime: Runtime,
+    binop_scratch: ValuePtrT, // Since we don't have phis just store the result of binops here
 }
 
 type ValueT = (Value, Value);
@@ -51,26 +49,36 @@ impl CodeGen {
         let mut context = Context::new();
         let function = context.function(Abi::Cdecl, Context::float64_type(), vec![]).expect("to create function");
         let runtime = Runtime::new(files, capture);
+        let binop_scratch_tag = function.alloca(1);
+        let binop_scratch_value = function.alloca(8);
+        let binop_scratch = (binop_scratch_tag, binop_scratch_value);
         let codegen = CodeGen {
             function,
             scopes: Scopes::new(),
             context,
             runtime,
+            binop_scratch
         };
         codegen
     }
 
     fn run(&mut self) {
         let function: extern "C" fn(f64) -> f64 = self.function.to_closure();
-        let res = function(123.123);
-        println!("function returned {}", res);
+        // let res = function(123.123);
+        todo!("run!")
+    }
+
+    fn output(&self) -> String {
+        self.runtime.output()
     }
 
     fn compile(&mut self, prog: Stmt, files: &[String], dump: bool) {
         let zero = self.function.create_float64_constant(0.0);
-        let runtime_data_const = self.function.create_void_ptr_constant(self.runtime.data_ptr());
-        self.function.insn_call_native(hello_world as *mut std::os::raw::c_void, vec![runtime_data_const]);
-        self.function.insn_return(zero);
+
+        self.define_all_vars(&prog);
+        self.compile_stmt(&prog);
+
+        self.function.insn_return(&zero);
 
         self.context.build_end();
         if dump {
@@ -78,45 +86,142 @@ impl CodeGen {
         }
         self.function.compile();
     }
-    //
-    // fn alloc(&mut self, tag: IntValue<'ctx>, value: FloatValue<'ctx>, context: &'ctx Context) -> (PointerValue<'ctx>, PointerValue<'ctx>) {
-    //     let tag_ptr = self.builder.build_alloca(context.i8_type(), "tag");
-    //     let value_ptr = self.builder.build_alloca(context.f64_type(), "value");
-    //     self.builder.build_store(tag_ptr, tag);
-    //     self.builder.build_store(value_ptr, value);
-    //     (tag_ptr, value_ptr)
-    // }
-    //
-    //
-    // fn create_value(&mut self, value: Value, context: &'ctx Context) -> ValueT<'ctx> {
-    //     let zero_i8 = context.i8_type().const_int(FLOAT_TAG as u64, false);
-    //     let two_i8 = context.i8_type().const_int(CONST_STRING_TAG as u64, false);
-    //
-    //     match value {
-    //         Value::Float(num) => {
-    //             let num_f64 = context.f64_type().const_float(num);
-    //             let one_i8 = context.i8_type().const_int(FLOAT_TAG as u64, false);
-    //             (one_i8, num_f64)
-    //         }
-    //         Value::ConstString(value) => {
-    //             let name = format!("const-str-{}", value);
-    //             let global_value = self.builder.build_global_string_ptr(&value, &name);
-    //             let global_ptr = global_value.as_pointer_value();
-    //             let float_ptr = self.cast_ptr_to_float(global_ptr, context);
-    //             (two_i8, float_ptr)
-    //         }
-    //     }
-    // }
-    //
-    // fn define_all_vars(&mut self, prog: &Stmt, context: &'ctx Context) {
-    //     let vars = variable_extract::extract(prog);
-    //     let zero_i8 = context.i8_type().const_int(0, false);
-    //     let zero = context.f64_type().const_float(0.0);
-    //     for var in vars {
-    //         let ptrs = self.alloc(zero_i8, zero, context);
-    //         self.scopes.insert(var, ptrs);
-    //     }
-    // }
+
+    fn runtime_data_ptr(&mut self) -> Value {
+        self.function.create_void_ptr_constant(self.runtime.data_ptr())
+    }
+
+    fn alloc_value(&mut self) -> ValuePtrT {
+        let tag = self.function.alloca(1);
+        let value = self.function.alloca(8);
+        (tag, value)
+    }
+
+    fn define_all_vars(&mut self, prog: &Stmt) {
+        let vars = variable_extract::extract(prog);
+
+        for var in vars {
+            let val = self.alloc_value();
+            self.scopes.insert(var, val);
+        }
+    }
+
+    fn compile_stmt(&mut self, stmt: &Stmt) {
+        match stmt {
+            Stmt::Expr(expr) => { self.compile_expr(expr); }
+            Stmt::Print(expr) => {
+                let val = self.compile_expr(expr);
+                let ptr = self.runtime_data_ptr();
+                self.function.insn_call_native(self.runtime.print_value, vec![ptr, val.0, val.1], None);
+            }
+            Stmt::Assign(variable, expr) => {
+                let val = self.compile_expr(expr);
+                let variable_ptr = self.scopes.get(variable);
+                self.function.insn_store(&variable_ptr.0, &val.0);
+                self.function.insn_store(&variable_ptr.1, &val.1);
+            }
+            Stmt::Group(group) => {
+                for group in group {
+                    self.compile_stmt(group)
+                }
+            }
+            Stmt::If(test, if_so, if_not) => {
+                let test = self.compile_expr(test);
+                let ptr = self.runtime_data_ptr();
+                let bool_value = self.function.insn_call_native(self.runtime.is_truthy, vec![ptr, test.0, test.1], Some(Context::int_type()));
+                let mut then_label = Label::new();
+                let mut done_label = Label::new();
+                self.function.insn_branch_if(&bool_value, &mut then_label);
+                if let Some(if_not) = if_not {
+                    self.compile_stmt(if_not);
+                }
+                self.function.insn_branch(&mut done_label);
+                self.function.insn_label(&mut then_label);
+                self.compile_stmt(if_so);
+                self.function.insn_branch(&mut done_label);
+            }
+            Stmt::While(test, body) => {
+                let mut test_label = Label::new();
+                let mut done_label = Label::new();
+                self.function.insn_label(&mut test_label);
+                let test = self.compile_expr(test);
+                let ptr = self.runtime_data_ptr();
+                let bool_value = self.function.insn_call_native(self.runtime.is_truthy, vec![ptr, test.0, test.1], Some(Context::int_type()));
+                self.function.insn_branch_if(&bool_value, &mut done_label);
+                self.compile_stmt(body);
+                self.function.insn_branch(&mut test_label);
+                self.function.insn_label(&mut done_label);
+            }
+        }
+    }
+
+    fn compile_expr(&mut self, expr: &TypedExpr) -> ValueT {
+        match &expr.expr {
+            Expr::NumberF64(num) => (self.function.create_sbyte_constant(FLOAT_TAG as c_char),
+                                     self.function.create_float64_constant(*num)),
+            Expr::String(str) => {
+                let boxed = Box::new(str.to_string());
+                let tag = self.function.create_sbyte_constant(CONST_STRING_TAG as c_char);
+                let raw_ptr = Box::into_raw(boxed);
+                let ptr = self.function.create_void_ptr_constant(raw_ptr as *mut c_void);
+                (tag, ptr)
+            }
+            Expr::MathOp(left, op, right) => {
+                todo!("mathop");
+                // let left = self.compile_expr(left);
+                // let right = self.compile_expr(right);
+                // let zero = self.function.create_sbyte_constant(FLOAT_TAG as c_char);
+                // let one = self.function.create_sbyte_constant(VAR_STRING_TAG as c_char);
+                // let two = self.function.create_sbyte_constant(CONST_STRING_TAG as c_char);
+                //
+                // let l_is_float = self.function.insn_eq(&left.0, &zero);
+                // let r_is_float = self.function.insn_eq(&right.0, &zero);
+                // let l_is_reg_string = self.function.insn_eq(&left.0, &one);
+                // let r_is_reg_string = self.function.insn_eq(&right.0, &one);
+                // let l_is_const_string = self.function.insn_eq(&left.0, &two);
+                // let r_is_const_string = self.function.insn_eq(&right.0, &two);
+                // let l_is_str = self.function.insn_or(&l_is_reg_string, &l_is_const_string);
+                // let r_is_str = self.function.insn_or(&r_is_reg_string, &r_is_const_string);
+                //
+                // // Result of math op is put here
+                // let result = self.alloc_value();
+                // let done_label = Label::new();
+                //
+                // // DONE
+                // let tag = self.function.insn_load(&result.0);
+                // let value = self.function.insn_load(&result.1);
+                //
+                //
+                //
+                // let mut done_lbl = Label::new();
+            }
+            Expr::BinOp(left, op, right) => {
+                let left = self.compile_expr(left);
+                let right = self.compile_expr(right);
+                todo!("binop")
+            }
+            Expr::LogicalOp(left, op, right) => {
+                todo!("logical op")
+            }
+            Expr::Variable(var) => {
+                let var_ptr = self.scopes.get(var);
+                let tag = self.function.insn_load(&var_ptr.0);
+                let val = self.function.insn_load(&var_ptr.1);
+                (tag, val)
+            }
+            Expr::Column(col) => {
+                let column = self.compile_expr(col);
+                let ptr = self.runtime_data_ptr();
+                let val = self.function.insn_call_native(self.runtime.column, vec![ptr, column.0, column.1], Some(Context::float64_type()));
+                let tag = self.function.create_sbyte_constant(VAR_STRING_TAG as c_char);
+                (tag, val)
+            }
+            Expr::Call => {
+                todo!("what is call for ?")
+            }
+        }
+    }
+
     //
     // fn load(&mut self, value: ValuePtrT<'ctx>) -> (IntValue<'ctx>, FloatValue<'ctx>) {
     //     let (tag, value) = value;

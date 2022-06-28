@@ -1,8 +1,8 @@
 mod runtime;
 
-pub use runtime::{Stmt, Expr, Program};
+pub use runtime::{Stmt, Expr, Program, TypedExpr, AwkT};
 pub use crate::parser::runtime::{PatternAction};
-use crate::lexer::{BinOp, Token, TokenType};
+use crate::lexer::{BinOp, Token, MathOp, TokenType};
 
 
 enum PAType {
@@ -142,8 +142,8 @@ impl Parser {
                 let str = if let Token::Ident(str) = self.consume(TokenType::Ident, "Expected identifier before '='") { str } else { panic!("Expected identifier before '='") };
                 self.consume(TokenType::Eq, "Expected '=' after identifier");
                 Stmt::Assign(str, self.expression())
-            } else if self.matches(vec![TokenType::Ret]) {
-                self.return_stmt()
+                // } else if self.matches(vec![TokenType::Ret]) {
+                //     self.return_stmt()
             } else if self.matches(vec![TokenType::While]) {
                 self.consume(TokenType::LeftParen, "Must have paren after while");
                 let expr = self.expression();
@@ -174,13 +174,13 @@ impl Parser {
         }
         Stmt::Group(stmts)
     }
-    fn return_stmt(&mut self) -> Stmt {
-        if self.peek().ttype() == TokenType::Semicolon {
-            Stmt::Return(None)
-        } else {
-            Stmt::Return(Some(self.expression()))
-        }
-    }
+    // fn return_stmt(&mut self) -> Stmt {
+    //     if self.peek().ttype() == TokenType::Semicolon {
+    //         Stmt::Return(None)
+    //     } else {
+    //         Stmt::Return(Some(self.expression()))
+    //     }
+    // }
     fn if_stmt(&mut self) -> Stmt {
         self.consume(TokenType::LeftParen, "Expected '(' after if");
         let predicate = self.expression();
@@ -194,14 +194,14 @@ impl Parser {
         Stmt::If(predicate, Box::new(then_blk), else_blk)
     }
 
-    fn expression(&mut self) -> Expr {
+    fn expression(&mut self) -> TypedExpr {
         if self.matches(vec![TokenType::Column]) {
-            return Expr::Column(Box::new(self.compare()));
+            return Expr::Column(Box::new(self.compare())).into();
         }
-        self.compare()
+        self.compare().into()
     }
 
-    fn compare(&mut self) -> Expr {
+    fn compare(&mut self) -> TypedExpr {
         let mut expr = self.comparison();
         while self.matches(vec![TokenType::GreaterEq, TokenType::Greater, TokenType::Less, TokenType::LessEq, TokenType::EqEq, TokenType::BangEq]) {
             let op = match self.previous().unwrap() {
@@ -213,59 +213,59 @@ impl Parser {
                 Token::BinOp(BinOp::EqEq) => BinOp::EqEq,
                 _ => panic!("Parser bug in compare matches function"),
             };
-            expr = Expr::BinOp(Box::new(expr), op, Box::new(self.comparison()))
+            expr = Expr::BinOp(Box::new(expr), op, Box::new(self.comparison())).into()
         }
         expr
     }
 
-    fn comparison(&mut self) -> Expr {
+    fn comparison(&mut self) -> TypedExpr {
         let mut expr = self.term();
         while self.matches(vec![TokenType::Plus, TokenType::Minus]) {
             let op = match self.previous().unwrap() {
-                Token::BinOp(BinOp::Minus) => BinOp::Minus,
-                Token::BinOp(BinOp::Plus) => BinOp::Plus,
+                Token::MathOp(MathOp::Minus) => MathOp::Minus,
+                Token::MathOp(MathOp::Plus) => MathOp::Plus,
                 _ => panic!("Parser bug in comparison function")
             };
-            expr = Expr::BinOp(Box::new(expr), op, Box::new(self.term()))
+            expr = Expr::MathOp(Box::new(expr), op, Box::new(self.term())).into()
         }
         expr
     }
 
-    fn term(&mut self) -> Expr {
+    fn term(&mut self) -> TypedExpr {
         let mut expr = self.primary();
         while self.matches(vec![TokenType::Star, TokenType::Slash]) {
             let op = match self.previous().unwrap() {
-                Token::BinOp(BinOp::Star) => BinOp::Star,
-                Token::BinOp(BinOp::Slash) => BinOp::Slash,
+                Token::MathOp(MathOp::Star) => MathOp::Star,
+                Token::MathOp(MathOp::Slash) => MathOp::Slash,
                 _ => panic!("Parser bug in comparison function")
             };
-            expr = Expr::BinOp(Box::new(expr), op, Box::new(self.primary()))
+            expr = Expr::MathOp(Box::new(expr), op, Box::new(self.primary())).into()
         }
         expr
     }
 
-    fn primary(&mut self) -> Expr {
+    fn primary(&mut self) -> TypedExpr {
         if self.is_at_end() {
             panic!("Primary and at end")
         }
         match self.tokens.get(self.current).unwrap().clone() {
             Token::NumberF64(num) => {
                 self.advance();
-                Expr::NumberF64(num)
+                Expr::NumberF64(num).into()
             }
             Token::LeftParen => {
                 self.consume(TokenType::LeftParen, "Expected to parse a left paren here");
                 let expr = self.expression();
                 self.consume(TokenType::RightParen, "Missing closing ')' after group");
-                expr
+                expr.into()
             }
             Token::Ident(name) => {
                 self.consume(TokenType::Ident, "Expected to parse an ident here");
-                Expr::Variable(name)
+                Expr::Variable(name).into()
             }
             Token::String(string) => {
                 self.consume(TokenType::String, "Expected to parse a string here");
-                Expr::String(string)
+                Expr::String(string).into()
             }
             t => panic!("Unexpected token {:?} {}", t, TokenType::name(t.ttype()))
         }
@@ -274,12 +274,24 @@ impl Parser {
 
 macro_rules! num {
     ($value:expr) => {
-        Expr::NumberF64($value)
+        TypedExpr::new_var(Expr::NumberF64($value))
     }
 }
 macro_rules! bnum {
     ($value:expr) => {
-        Box::new(Expr::NumberF64($value))
+        Box::new(TypedExpr::new_var(Expr::NumberF64($value)))
+    }
+}
+
+macro_rules! mathop {
+    ($a:expr, $op:expr, $b:expr) => {
+        TypedExpr::new_var(Expr::MathOp($a, $op, $b))
+    }
+}
+
+macro_rules! binop {
+    ($a:expr, $op:expr, $b:expr) => {
+        TypedExpr::new_var(Expr::BinOp($a, $op, $b))
     }
 }
 
@@ -296,13 +308,14 @@ macro_rules! actual {
     }
 }
 
+
 #[test]
 fn test_ast_number() {
     use crate::lexer::lex;
 
     assert_eq!(parse(lex("{1 + 2;}").unwrap()),
                Program::new(vec![], vec![], vec![
-                   PatternAction::new_action_only(Stmt::Expr(Expr::BinOp(Box::new(Expr::NumberF64(1.0)), BinOp::Plus, Box::new(Expr::NumberF64(2.0)))))
+                   PatternAction::new_action_only(Stmt::Expr(mathop!(bnum!(1.0), MathOp::Plus, bnum!(2.0))))
                ]));
 }
 
@@ -310,18 +323,18 @@ fn test_ast_number() {
 #[test]
 fn test_ast_oop() {
     use crate::lexer::lex;
-    let left = Box::new(Expr::NumberF64(1.0));
-    let right = Box::new(Expr::BinOp(Box::new(Expr::NumberF64(3.0)), BinOp::Star, Box::new(Expr::NumberF64(2.0))));
-    let mult = Stmt::Expr(Expr::BinOp(left, BinOp::Plus, right));
+    let left = bnum!(1.0);
+    let right = Box::new(mathop!(bnum!(3.0), MathOp::Star, bnum!(2.0)));
+    let mult = Stmt::Expr(mathop!(left, MathOp::Plus, right));
     assert_eq!(parse(lex("{1 + 3 * 2;}").unwrap()), Program::new_action_only(mult));
 }
 
 #[test]
 fn test_ast_oop_2() {
     use crate::lexer::lex;
-    let left = Box::new(Expr::NumberF64(2.0));
-    let right = Box::new(Expr::BinOp(Box::new(Expr::NumberF64(1.0)), BinOp::Star, Box::new(Expr::NumberF64(3.0))));
-    let mult = Stmt::Expr(Expr::BinOp(right, BinOp::Plus, left));
+    let left = Box::new(num!(2.0));
+    let right = Box::new(TypedExpr::new_var(Expr::MathOp(Box::new(num!(1.0)), MathOp::Star, Box::new(num!(3.0)))));
+    let mult = Stmt::Expr(TypedExpr::new_var(Expr::MathOp(right, MathOp::Plus, left)));
     assert_eq!(parse(lex("{1 * 3 + 2;}").unwrap()), Program::new_action_only(mult));
 }
 
@@ -329,66 +342,52 @@ fn test_ast_oop_2() {
 #[test]
 fn test_ast_assign() {
     use crate::lexer::lex;
-    let stmt = Stmt::Assign(format!("abc"), Expr::NumberF64(2.0));
+    let stmt = Stmt::Assign(format!("abc"), num!(2.0));
     assert_eq!(parse(lex("{abc = 2.0; }").unwrap()), Program::new_action_only(stmt));
-}
-
-#[test]
-fn test_ret() {
-    use crate::lexer::lex;
-    let stmt = Stmt::Return(Some(Expr::NumberF64(2.0)));
-    assert_eq!(parse(lex("{return 2; }").unwrap()), Program::new_action_only(stmt));
-}
-
-#[test]
-fn test_ret_nil() {
-    use crate::lexer::lex;
-    let stmt = Stmt::Return(None);
-    assert_eq!(parse(lex("{return;}").unwrap()), Program::new_action_only(stmt));
 }
 
 #[test]
 fn test_if_else() {
     use crate::lexer::lex;
-    let str = "{ if (1) { return 2; } else { return 3; }}";
+    let str = "{ if (1) { print 2; } else { print 3; }}";
     let actual = parse(lex(str).unwrap());
-    assert_eq!(actual, Program::new_action_only(Stmt::If(Expr::NumberF64(1.0), Box::new(Stmt::Return(Some(Expr::NumberF64(2.0)))), Some(Box::new(Stmt::Return(Some(Expr::NumberF64(3.0))))))));
+    assert_eq!(actual, Program::new_action_only(Stmt::If(num!(1.0), Box::new(Stmt::Print(num!(2.0))), Some(Box::new(Stmt::Print(num!(3.0)))))));
 }
 
 #[test]
 fn test_if_only() {
     use crate::lexer::lex;
-    let str = "{if (1) { return 2; }}";
-    assert_eq!(parse(lex(str).unwrap()), Program::new_action_only(Stmt::If(Expr::NumberF64(1.0), Box::new(Stmt::Return(Some(Expr::NumberF64(2.0)))), None)));
+    let str = "{if (1) { print 2; }}";
+    assert_eq!(parse(lex(str).unwrap()), Program::new_action_only(Stmt::If(num!(1.0), Box::new(Stmt::Print(num!(2.0))), None)));
 }
 
 #[test]
 fn test_print() {
     use crate::lexer::lex;
     let str = "{print 1;}";
-    assert_eq!(parse(lex(str).unwrap()), Program::new_action_only(Stmt::Print(Expr::NumberF64(1.0))));
+    assert_eq!(parse(lex(str).unwrap()), Program::new_action_only(Stmt::Print(num!(1.0))));
 }
 
 #[test]
 fn test_group() {
     use crate::lexer::lex;
     let str = "{{print 1; print 2;}}";
-    assert_eq!(parse(lex(str).unwrap()), Program::new_action_only(Stmt::Group(vec![Stmt::Print(Expr::NumberF64(1.0)), Stmt::Print(Expr::NumberF64(2.0))])));
+    assert_eq!(parse(lex(str).unwrap()), Program::new_action_only(Stmt::Group(vec![Stmt::Print(num!(1.0)), Stmt::Print(num!(2.0))])));
 }
 
 
 #[test]
 fn test_if_else_continues() {
     use crate::lexer::lex;
-    let str = "{if (1) { return 2; } else { return 3; } 4.0;}";
+    let str = "{if (1) { print 2; } else { print 3; } 4.0;}";
     let actual = parse(lex(str).unwrap());
     assert_eq!(actual, Program::new_action_only(
         Stmt::Group(vec![
             Stmt::If(
-                Expr::NumberF64(1.0),
-                Box::new(Stmt::Return(Some(Expr::NumberF64(2.0)))),
-                Some(Box::new(Stmt::Return(Some(Expr::NumberF64(3.0)))))),
-            Stmt::Expr(Expr::NumberF64(4.0))])));
+                num!(1.0),
+                Box::new(Stmt::Print(num!(2.0))),
+                Some(Box::new(Stmt::Print(num!(3.0))))),
+            Stmt::Expr(num!(4.0))])));
 }
 
 #[test]
@@ -396,17 +395,11 @@ fn test_paser_begin_end() {
     use crate::lexer::lex;
     let str = "a { print 5; } BEGIN { print 1; } begin { print 2; } END { print 3; } end { print 4; }";
     let actual = parse(lex(str).unwrap());
-    let begins = vec![Stmt::Print(Expr::NumberF64(1.0)), Stmt::Print(Expr::NumberF64(2.0))];
-    let ends = vec![Stmt::Print(Expr::NumberF64(3.0)), Stmt::Print(Expr::NumberF64(4.0))];
-    let generic = PatternAction::new(Some(Expr::Variable("a".to_string())), Stmt::Print(Expr::NumberF64(5.0)));
+    let begins = vec![Stmt::Print(num!(1.0)), Stmt::Print(num!(2.0))];
+    let ends = vec![Stmt::Print(num!(3.0)), Stmt::Print(num!(4.0))];
+    let generic = PatternAction::new(Some(TypedExpr::new_var(Expr::Variable("a".to_string()))),
+                                     Stmt::Print(num!(5.0)));
     assert_eq!(actual, Program::new(begins, ends, vec![generic]));
-}
-
-#[test]
-fn test_parser_begin_end2() {
-    use crate::lexer::lex;
-    let str = "a { print 5; }";
-    let actual = parse(lex(str).unwrap());
 }
 
 #[test]
@@ -414,7 +407,7 @@ fn test_pattern_only() {
     use crate::lexer::lex;
     let str = "test";
     let actual = parse(lex(str).unwrap());
-    assert_eq!(actual, Program::new(vec![], vec![], vec![PatternAction::new_pattern_only(Expr::Variable("test".to_string()))]));
+    assert_eq!(actual, Program::new(vec![], vec![], vec![PatternAction::new_pattern_only(TypedExpr::new_var(Expr::Variable("test".to_string())))]));
 }
 
 #[test]
@@ -422,7 +415,7 @@ fn test_print_no_semicolon() {
     use crate::lexer::lex;
     let str = "{ print 1 }";
     let actual = parse(lex(str).unwrap());
-    assert_eq!(actual, Program::new(vec![], vec![], vec![PatternAction::new_action_only(Stmt::Print(Expr::NumberF64(1.0)))]));
+    assert_eq!(actual, Program::new(vec![], vec![], vec![PatternAction::new_action_only(Stmt::Print(num!(1.0)))]));
 }
 
 #[test]
@@ -430,9 +423,9 @@ fn test_column() {
     use crate::lexer::lex;
     let str = "$0+2 { print a; }";
     let actual = parse(lex(str).unwrap());
-    let body = Stmt::Print(Expr::Variable("a".to_string()));
-    let pattern = Expr::Column(Box::new(Expr::BinOp(bnum!(0.0), BinOp::Plus, bnum!(2.0))));
-    let pa = PatternAction::new(Some(pattern), body);
+    let body = Stmt::Print(TypedExpr::new_var(Expr::Variable("a".to_string())));
+    let pattern = Expr::Column(Box::new(TypedExpr::new_var(Expr::MathOp(bnum!(0.0), MathOp::Plus, bnum!(2.0)))));
+    let pa = PatternAction::new(Some(TypedExpr::new_var(pattern)), body);
     assert_eq!(actual, Program::new(vec![], vec![], vec![pa]));
 }
 
@@ -441,21 +434,21 @@ fn test_while_l00p() {
     use crate::lexer::lex;
     let str = "{ while (123) { print 1; } }";
     let actual = parse(lex(str).unwrap());
-    let body = Stmt::While(Expr::NumberF64(123.0), Box::new(Stmt::Print(Expr::NumberF64(1.0))));
+    let body = Stmt::While(num!(123.0), Box::new(Stmt::Print(num!(1.0))));
     assert_eq!(actual, Program::new(vec![], vec![], vec![PatternAction::new_action_only(body)]));
 }
 
 #[test]
 fn test_lt() {
     actual!(actual, "{ 1 < 3 }");
-    let body = Stmt::Expr(Expr::BinOp(bnum!(1.0), BinOp::Less, bnum!(3.0)));
+    let body = Stmt::Expr(TypedExpr::new_var(Expr::BinOp(bnum!(1.0), BinOp::Less, bnum!(3.0))));
     assert_eq!(actual, sprogram!(body));
 }
 
 #[test]
 fn test_gt() {
     actual!(actual, "{ 1 > 3 }");
-    let body = Stmt::Expr(Expr::BinOp(bnum!(1.0), BinOp::Greater, bnum!(3.0)));
+    let body = Stmt::Expr(TypedExpr::new_var(Expr::BinOp(bnum!(1.0), BinOp::Greater, bnum!(3.0))));
     assert_eq!(actual, sprogram!(body));
 }
 
@@ -463,35 +456,35 @@ fn test_gt() {
 #[test]
 fn test_lteq() {
     actual!(actual, "{ 1 <= 3 }");
-    let body = Stmt::Expr(Expr::BinOp(bnum!(1.0), BinOp::LessEq, bnum!(3.0)));
+    let body = Stmt::Expr(TypedExpr::new_var(Expr::BinOp(bnum!(1.0), BinOp::LessEq, bnum!(3.0))));
     assert_eq!(actual, sprogram!(body));
 }
 
 #[test]
 fn test_gteq() {
     actual!(actual, "{ 1 >= 3 }");
-    let body = Stmt::Expr(Expr::BinOp(bnum!(1.0), BinOp::GreaterEq, bnum!(3.0)));
+    let body = Stmt::Expr(TypedExpr::new_var(Expr::BinOp(bnum!(1.0), BinOp::GreaterEq, bnum!(3.0))));
     assert_eq!(actual, sprogram!(body));
 }
 
 #[test]
 fn test_eqeq() {
     actual!(actual, "{ 1 == 3 }");
-    let body = Stmt::Expr(Expr::BinOp(bnum!(1.0), BinOp::EqEq, bnum!(3.0)));
+    let body = Stmt::Expr(TypedExpr::new_var(Expr::BinOp(bnum!(1.0), BinOp::EqEq, bnum!(3.0))));
     assert_eq!(actual, sprogram!(body));
 }
 
 #[test]
 fn test_bangeq() {
     actual!(actual, "{ 1 != 3 }");
-    let body = Stmt::Expr(Expr::BinOp(bnum!(1.0), BinOp::BangEq, bnum!(3.0)));
+    let body = Stmt::Expr(TypedExpr::new_var(Expr::BinOp(bnum!(1.0), BinOp::BangEq, bnum!(3.0))));
     assert_eq!(actual, sprogram!(body));
 }
 
 #[test]
 fn test_bangeq_oo() {
     actual!(actual, "{ 1 != 3*4 }");
-    let body = Stmt::Expr(Expr::BinOp(bnum!(1.0), BinOp::BangEq, Box::new(Expr::BinOp(bnum!(3.0), BinOp::Star, bnum!(4.0)))));
+    let body = Stmt::Expr(TypedExpr::new_var(Expr::BinOp(bnum!(1.0), BinOp::BangEq, Box::new(TypedExpr::new_var(Expr::MathOp(bnum!(3.0), MathOp::Star, bnum!(4.0)))))));
     assert_eq!(actual, sprogram!(body));
 }
 
@@ -499,8 +492,8 @@ fn test_bangeq_oo() {
 #[test]
 fn test_cmp_oop1() {
     actual!(actual, "{ 3*3 == 9 }");
-    let left = Expr::BinOp(bnum!(3.0), BinOp::Star, bnum!(3.0));
-    let body = Stmt::Expr(Expr::BinOp(Box::new(left), BinOp::EqEq, bnum!(9.0)));
+    let left = mathop!(bnum!(3.0), MathOp::Star, bnum!(3.0));
+    let body = Stmt::Expr(binop!(Box::new(left), BinOp::EqEq, bnum!(9.0)));
     assert_eq!(actual, sprogram!(body));
 }
 
@@ -508,8 +501,8 @@ fn test_cmp_oop1() {
 fn test_cmp_oop2() {
     actual!(actual, "{ a = 1*3 == 4 }");
 
-    let left = Expr::BinOp(bnum!(1.0), BinOp::Star, bnum!(3.0));
-    let body = Expr::BinOp(Box::new(left), BinOp::EqEq, bnum!(4.0));
+    let left = TypedExpr::new_var(Expr::MathOp(bnum!(1.0), MathOp::Star, bnum!(3.0)));
+    let body = TypedExpr::new_var(Expr::BinOp(Box::new(left), BinOp::EqEq, bnum!(4.0)));
     let stmt = Stmt::Assign(format!("a"), body);
     assert_eq!(actual, sprogram!(stmt));
 }

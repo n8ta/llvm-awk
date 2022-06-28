@@ -1,5 +1,5 @@
 use crate::{Expr, parser};
-use crate::parser::{Stmt};
+use crate::parser::{Stmt, TypedExpr};
 
 pub fn transform(program: parser::Program) -> Stmt {
     let mut prog = program.begins;
@@ -14,7 +14,7 @@ pub fn transform(program: parser::Program) -> Stmt {
         every_line_stms.push(stmt)
     }
     if every_line_stms.len() > 0 {
-        let line_loop = Stmt::While(Expr::Call, Box::new(Stmt::Group(every_line_stms)));
+        let line_loop = Stmt::While(TypedExpr::new_num(Expr::Call), Box::new(Stmt::Group(every_line_stms)));
         prog.push(line_loop);
     }
 

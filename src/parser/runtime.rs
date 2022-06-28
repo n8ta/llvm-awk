@@ -1,52 +1,117 @@
-use std::fmt::{Display, Formatter};
-use crate::lexer::{BinOp, LogicalOp};
+use std::fmt::{Display, Formatter, write};
+use crate::lexer::{BinOp, MathOp, LogicalOp};
+
+
+#[derive(PartialEq, Clone, Copy, Debug)]
+pub enum AwkT {
+    String,
+    Float,
+    Variable,
+}
 
 #[derive(Debug, PartialEq)]
 pub enum Stmt {
-    Expr(Expr),
-    Print(Expr),
-    Assign(String, Expr),
-    Return(Option<Expr>),
+    Expr(TypedExpr),
+    Print(TypedExpr),
+    Assign(String, TypedExpr),
     Group(Vec<Stmt>),
-    If(Expr, Box<Stmt>, Option<Box<Stmt>>),
-    While(Expr, Box<Stmt>)
+    If(TypedExpr, Box<Stmt>, Option<Box<Stmt>>),
+    While(TypedExpr, Box<Stmt>),
+}
+
+impl Display for Stmt {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Stmt::Expr(expr) => { write!(f, "{}", expr)? },
+            Stmt::Print(expr) => { write!(f, "print {}", expr)? },
+            Stmt::Assign(var, expr) => { write!(f, "{} = {}", var, expr)?; },
+            Stmt::Group(group) => {
+                for elem in group {
+                    write!(f, "{}\n", elem)?;
+                }
+            }
+            Stmt::If(test, if_so, if_not) => {
+                write!(f, "if {} {{{}}}\n", test, if_so)?;
+                if let Some(else_case) = if_not {
+                    write!(f, "else\n {{\n{} }}", else_case)?;
+                }
+            }
+            Stmt::While(test, body) => {
+                write!(f, "while {} {{{}}}\n", test, body)?;
+            }
+        };
+        write!(f, "\n")
+    }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct PatternAction {
-    pub pattern: Option<Expr>,
-    pub action: Stmt
+    pub pattern: Option<TypedExpr>,
+    pub action: Stmt,
 }
+
 impl PatternAction {
-    pub fn new(pattern: Option<Expr>, action: Stmt) -> Self {
+    pub fn new(pattern: Option<TypedExpr>, action: Stmt) -> Self {
         Self { pattern, action }
     }
-    pub fn new_pattern_only(test: Expr) -> PatternAction { PatternAction::new(Some(test), Stmt::Print(Expr::Column(Box::new(Expr::NumberF64(0.0))))) }
+    pub fn new_pattern_only(test: TypedExpr) -> PatternAction { PatternAction::new(Some(test), Stmt::Print(TypedExpr::new_str(Expr::Column(Box::new(TypedExpr::new_num(Expr::NumberF64(0.0))))))) }
     pub fn new_action_only(body: Stmt) -> PatternAction { PatternAction::new(None, body) }
 }
 
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct TypedExpr {
+    pub typ: AwkT,
+    pub expr: Expr,
+}
+
+impl TypedExpr {
+    pub fn new_num(expr: Expr) -> TypedExpr { TypedExpr { typ: AwkT::Float, expr } }
+    pub fn new_str(expr: Expr) -> TypedExpr { TypedExpr { typ: AwkT::String, expr } }
+    pub fn new_var(expr: Expr) -> TypedExpr { TypedExpr { typ: AwkT::Variable, expr } }
+    pub fn new(typ: AwkT, expr: Expr) -> TypedExpr { TypedExpr { typ, expr } }
+}
+
+impl Into<TypedExpr> for Expr {
+    fn into(self) -> TypedExpr {
+        TypedExpr::new_var(self)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
     NumberF64(f64),
     String(String),
-    BinOp(Box<Expr>, BinOp, Box<Expr>),
-    LogicalOp(Box<Expr>, LogicalOp, Box<Expr>),
+    BinOp(Box<TypedExpr>, BinOp, Box<TypedExpr>),
+    MathOp(Box<TypedExpr>, MathOp, Box<TypedExpr>),
+    LogicalOp(Box<TypedExpr>, LogicalOp, Box<TypedExpr>),
     Variable(String),
-    Column(Box<Expr>),
+    Column(Box<TypedExpr>),
     Call,
+}
+
+
+impl Display for TypedExpr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.typ {
+            AwkT::String => write!(f, "(s {})", self.expr),
+            AwkT::Float => write!(f, "(f {})", self.expr),
+            AwkT::Variable => write!(f, "(v {})", self.expr),
+        }
+    }
 }
 
 impl Display for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Expr::Call => write!(f, "call"),
-            Expr::Variable(n) => write!(f, "var {}", n),
+            Expr::Variable(n) => write!(f, "{}", n),
             Expr::String(str) => write!(f, "\"{}\"", str),
             Expr::NumberF64(n) => write!(f, "{}", n),
             Expr::BinOp(left, op, right) => write!(f, "{}{}{}", left, op, right),
+            Expr::MathOp(left, op, right) => write!(f, "{}{}{}", left, op, right),
             Expr::LogicalOp(left, op, right) => write!(f, "{}{}{}", left, op, right),
-            Expr::Column(col) => write!(f, "{}", col),
+            Expr::Column(col) => write!(f, "${}", col),
         }
     }
 }

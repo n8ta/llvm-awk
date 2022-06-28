@@ -1,17 +1,23 @@
 use std::fmt::{Display, Formatter};
 
-#[derive(Debug, Clone, PartialOrd, PartialEq)]
-pub enum BinOp {
+#[derive(Debug, Clone, PartialOrd, PartialEq, Copy)]
+pub enum MathOp {
     Minus,
     Plus,
     Slash,
     Star,
+}
+
+#[derive(Debug, Clone, PartialOrd, PartialEq, Copy)]
+pub enum BinOp {
     Greater,
     GreaterEq,
     Less,
     LessEq,
     BangEq,
     EqEq,
+    MatchedBy,
+    NotMatchedBy,
 }
 
 // impl BinOp {
@@ -31,21 +37,30 @@ pub enum BinOp {
 impl Display for BinOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            BinOp::Minus => f.write_str("-"),
-            BinOp::Plus => f.write_str("+"),
-            BinOp::Slash => f.write_str("/"),
-            BinOp::Star => f.write_str("*"),
             BinOp::Greater => f.write_str(">"),
             BinOp::GreaterEq => f.write_str(">="),
             BinOp::Less => f.write_str("<"),
             BinOp::LessEq => f.write_str("<="),
             BinOp::BangEq => f.write_str("!="),
             BinOp::EqEq => f.write_str("=="),
+            BinOp::MatchedBy => f.write_str("~"),
+            BinOp::NotMatchedBy => f.write_str("!~"),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialOrd, PartialEq)]
+impl Display for MathOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MathOp::Minus => f.write_str("-"),
+            MathOp::Plus => f.write_str("+"),
+            MathOp::Slash => f.write_str("/"),
+            MathOp::Star => f.write_str("*"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialOrd, PartialEq, Copy)]
 pub enum LogicalOp {
     And,
     Or,
@@ -66,6 +81,7 @@ pub enum Token {
     Semicolon,
     Column,
     BinOp(BinOp),
+    MathOp(MathOp),
     LogicalOp(LogicalOp),
     Bang,
     String(String),
@@ -126,6 +142,8 @@ pub enum TokenType {
     For,
     While,
     Do,
+    MatchedBy,
+    NotMatchedBy,
 }
 
 impl Token {
@@ -134,16 +152,22 @@ impl Token {
         match self {
             Token::BinOp(bin_op) => {
                 match bin_op {
-                    BinOp::Minus => TokenType::Minus,
-                    BinOp::Plus => TokenType::Plus,
-                    BinOp::Slash => TokenType::Slash,
-                    BinOp::Star => TokenType::Star,
                     BinOp::Greater => TokenType::Greater,
                     BinOp::GreaterEq => TokenType::GreaterEq,
                     BinOp::Less => TokenType::Less,
                     BinOp::LessEq => TokenType::LessEq,
                     BinOp::BangEq => TokenType::BangEq,
                     BinOp::EqEq => TokenType::EqEq,
+                    BinOp::MatchedBy => TokenType::MatchedBy,
+                    BinOp::NotMatchedBy => TokenType::NotMatchedBy,
+                }
+            }
+            Token::MathOp(math_op) => {
+                match math_op {
+                    MathOp::Minus => TokenType::Minus,
+                    MathOp::Plus => TokenType::Plus,
+                    MathOp::Slash => TokenType::Slash,
+                    MathOp::Star => TokenType::Star,
                 }
             }
             Token::LogicalOp(logical_op) => {
@@ -217,6 +241,8 @@ impl TokenType {
             TokenType::Ident => "Ident",
             TokenType::For => "For",
             TokenType::Do => "Do",
+            TokenType::MatchedBy => "~",
+            TokenType::NotMatchedBy => "~!",
         }
     }
 }

@@ -1,6 +1,6 @@
 mod types;
 
-pub use types::{Token, TokenType, BinOp, LogicalOp};
+pub use types::{Token, TokenType, BinOp, LogicalOp, MathOp};
 
 pub fn lex(str: &str) -> LexerResult {
     let mut lexer = Lexer::new(str);
@@ -56,10 +56,8 @@ impl<'a> Lexer<'a> {
         return Ok(());
     }
     fn number(&mut self) -> Result<Token, String> {
-        let mut is_float = false;
         while self.peek().is_digit(10) { self.advance(); }
         if self.peek() == '.' && self.peek_next().is_digit(10) {
-            is_float = true;
             self.advance();
         }
         while self.peek().is_digit(10) { self.advance(); }
@@ -135,10 +133,10 @@ impl<'a> Lexer<'a> {
         let c = self.advance();
         match c {
             '$' => self.add_token(Token::Column),
-            '-' => self.add_token(Token::BinOp(BinOp::Minus)),
-            '+' => self.add_token(Token::BinOp(BinOp::Plus)),
+            '-' => self.add_token(Token::MathOp(MathOp::Minus)),
+            '+' => self.add_token(Token::MathOp(MathOp::Plus)),
             // ';' => self.add_token(Token::Semicolon),
-            '*' => self.add_token(Token::BinOp(BinOp::Star)),
+            '*' => self.add_token(Token::MathOp(MathOp::Star)),
             '!' => {
                 let tt = match self.matches('=') {
                     true => Token::BinOp(BinOp::BangEq),
@@ -187,7 +185,7 @@ impl<'a> Lexer<'a> {
                         self.advance();
                     }
                 } else {
-                    self.add_token(Token::BinOp(BinOp::Slash));
+                    self.add_token(Token::MathOp(MathOp::Slash));
                 }
             }
             '{' => self.add_token(Token::LeftBrace),
@@ -258,20 +256,20 @@ fn test_column_simple() {
 fn test_columns() {
     let str = "$1 + $2000 $0";
     let tokens = lex(str).unwrap();
-    assert_eq!(tokens, vec![Token::Column, Token::NumberF64(1.0), Token::BinOp(BinOp::Plus), Token::Column, Token::NumberF64(2000.0), Token::Column, Token::NumberF64(0.0), Token::EOF]);
+    assert_eq!(tokens, vec![Token::Column, Token::NumberF64(1.0), Token::MathOp(MathOp::Plus), Token::Column, Token::NumberF64(2000.0), Token::Column, Token::NumberF64(0.0), Token::EOF]);
 }
 
 #[test]
 fn test_lex_binops_and_true_false() {
     let str = "4*2+1-2+false/true";
     let tokens = lex(str).unwrap();
-    assert_eq!(tokens, vec![Token::NumberF64(4.0), Token::BinOp(BinOp::Star), Token::NumberF64(2.0), Token::BinOp(BinOp::Plus), Token::NumberF64(1.0), Token::BinOp(BinOp::Minus), Token::NumberF64(2.0), Token::BinOp(BinOp::Plus), Token::False, Token::BinOp(BinOp::Slash), Token::True, Token::EOF]);
+    assert_eq!(tokens, vec![Token::NumberF64(4.0), Token::MathOp(MathOp::Star), Token::NumberF64(2.0), Token::MathOp(MathOp::Plus), Token::NumberF64(1.0), Token::MathOp(MathOp::Minus), Token::NumberF64(2.0), Token::MathOp(MathOp::Plus), Token::False, Token::MathOp(MathOp::Slash), Token::True, Token::EOF]);
 }
 
 #[test]
 fn test_lex_decimals() {
     let str = "4.123-123.123";
-    assert_eq!(lex(str).unwrap(), vec![Token::NumberF64(4.123), Token::BinOp(BinOp::Minus), Token::NumberF64(123.123), Token::EOF]);
+    assert_eq!(lex(str).unwrap(), vec![Token::NumberF64(4.123), Token::MathOp(MathOp::Minus), Token::NumberF64(123.123), Token::EOF]);
 }
 
 #[test]

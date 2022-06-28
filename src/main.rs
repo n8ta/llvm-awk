@@ -1,5 +1,5 @@
 use crate::args::{AwkArgs, ProgramType};
-use crate::lexer::{BinOp, lex};
+use crate::lexer::{lex};
 use crate::parser::{Expr, parse};
 use crate::transformer::transform;
 
@@ -12,6 +12,7 @@ mod runner;
 mod args;
 mod transformer;
 mod runtime;
+mod typing;
 
 
 fn main() {

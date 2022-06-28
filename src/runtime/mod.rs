@@ -4,7 +4,7 @@ use std::ffi::c_void;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use crate::codgen::{CONST_STRING_TAG, FLOAT_TAG, STRING_TAG};
+use crate::codgen::{CONST_STRING_TAG, FLOAT_TAG, TMP_STRING_TAG, VAR_STRING_TAG};
 use crate::runtime::casting::{cast_float_to_string, cast_str_to_float, cast_to_runtime_data};
 
 fn get_next_file(data: &mut RuntimeData) -> bool {
@@ -20,16 +20,21 @@ fn get_next_file(data: &mut RuntimeData) -> bool {
     }
 }
 
-pub extern "C" fn print_value(data: *mut c_void, tag: u8, value: f64) -> f64 {
-    let data = cast_to_runtime_data(data);
+pub extern "C" fn print_value(_data: *mut c_void, tag: u8, value: f64) -> f64 {
     if tag == FLOAT_TAG {
         println!("{}", value);
-    } else if tag == STRING_TAG {
+    } else if tag == VAR_STRING_TAG {
         let string = cast_float_to_string(value);
         println!("{}", string);
+        Box::leak(string);
     } else if tag == CONST_STRING_TAG {
         let string = cast_float_to_string(value);
         println!("{}", string);
+        Box::leak(string);
+    } else if tag == TMP_STRING_TAG {
+        let string = cast_float_to_string(value);
+        println!("{}", string);
+        Box::leak(string);
     } else {
         panic!("print_value called w/bad tag {}", tag);
     }
@@ -40,10 +45,13 @@ pub extern "C" fn print_value_capture(data: *mut c_void, tag: u8, value: f64) ->
     let data = cast_to_runtime_data(data);
     let output = if tag == FLOAT_TAG {
         format!("{}", value)
-    } else if tag == STRING_TAG {
+    } else if tag == VAR_STRING_TAG {
         let string = cast_float_to_string(value);
         format!("{}", string)
     } else if tag == CONST_STRING_TAG {
+        let string = cast_float_to_string(value);
+        format!("{}", string)
+    } else if tag == TMP_STRING_TAG {
         let string = cast_float_to_string(value);
         format!("{}", string)
     } else {
@@ -90,7 +98,7 @@ extern "C" fn column(data_ptr: *mut c_void, tag: u8, value: f64) -> f64 {
     };
     let column = if tag == FLOAT_TAG {
         value.round() as i64
-    } else if tag == CONST_STRING_TAG || tag == STRING_TAG {
+    } else if tag == CONST_STRING_TAG || tag == VAR_STRING_TAG {
         let num = string_to_number(data_ptr, tag, value);
         num.round() as i64
     } else {
@@ -109,17 +117,32 @@ extern "C" fn column(data_ptr: *mut c_void, tag: u8, value: f64) -> f64 {
 }
 
 extern "C" fn free_string(data: *mut c_void, tag: u8, value: f64) -> f64 {
-    let str = cast_float_to_string(value);
-    std::mem::drop(str);
+    let str = cast_float_to_string(value); // implicitly free'ed after this func
     0.0
 }
+
+extern "C" fn is_truthy(data: *mut c_void, tag: u8, value: f64) -> i32 {
+    return if tag == FLOAT_TAG {
+        if value != 0.0 { 1 } else { 0 }
+    } else if tag == VAR_STRING_TAG || tag ==  CONST_STRING_TAG || tag == TMP_STRING_TAG {
+        let str = cast_float_to_string(value);
+        let length = str.len();
+        Box::leak(str);
+        if length != 0 { 1 } else { 0 }
+    } else {
+        panic!("bad tag detected in is_truthy runtime func: {} {}", tag, value);
+    }
+}
+
 
 extern "C" fn string_to_number(data: *mut c_void, tag: u8, value: f64) -> f64 {
     if tag == FLOAT_TAG {
         panic!("Tried to convert number to number????")
     }
     let string = cast_float_to_string(value);
-    string.parse::<f64>().expect(&format!("couldn't convert string to number {}", string))
+    let number=  string.parse::<f64>().expect(&format!("couldn't convert string to number {}", string));
+    Box::leak(string);
+    number
 }
 
 extern "C" fn number_to_string(data: *mut c_void, tag: u8, value: f64) -> f64 {
@@ -143,13 +166,14 @@ pub extern "C" fn hello_world(runtime_data: *mut c_void) {
 
 pub struct Runtime {
     runtime_data: *mut c_void,
-    next_line: *mut c_void,
-    column: *mut c_void,
-    free_string: *mut c_void,
-    string_to_number: *mut c_void,
-    number_to_string: *mut c_void,
-    hello_world: *mut c_void,
-    print_value: *mut c_void,
+    pub next_line: *mut c_void,
+    pub column: *mut c_void,
+    pub free_string: *mut c_void,
+    pub string_to_number: *mut c_void,
+    pub number_to_string: *mut c_void,
+    pub hello_world: *mut c_void,
+    pub print_value: *mut c_void,
+    pub is_truthy: *mut c_void,
 }
 
 pub struct RuntimeData {
@@ -188,6 +212,7 @@ impl Runtime {
             free_string: free_string as *mut c_void,
             string_to_number: string_to_number as *mut c_void,
             number_to_string: number_to_string as *mut c_void,
+            is_truthy: is_truthy as *mut c_void,
             print_value,
             hello_world: hello_world as *mut c_void,
         }
