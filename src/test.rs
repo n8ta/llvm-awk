@@ -1,5 +1,6 @@
 use crate::{analyze, codgen, lex, parse, transform};
 use tempfile::{tempdir};
+
 const ONE_LINE: &'static str = "1 2 3\n";
 const NUMBERS: &'static str = "1 2 3\n4 5 6\n7 8 9";
 const FLOAT_NUMBERS: &'static str = "1.1 2.2 3.3\n4.4 5.5 6.6\n7.7 8.8 9.9";
@@ -26,6 +27,7 @@ macro_rules! test {
     ($name:ident,$prog:expr,$file:expr,$stdout:expr,$status:expr) => {
         #[test]
         fn $name() {
+            println!("prog: {}",$prog);
             test_it($prog, $file, $stdout, $status);
         }
     }

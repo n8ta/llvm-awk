@@ -185,11 +185,8 @@ impl CodeGen {
 
     fn compile_expr(&mut self, expr: &TypedExpr) -> ValueT {
         match &expr.expr {
-            Expr::NumberF64(num) => {
-                let res = (self.function.create_sbyte_constant(FLOAT_TAG as c_char),
-                           self.function.create_float64_constant(*num));
-                res
-            }
+            Expr::NumberF64(num) => (self.function.create_sbyte_constant(FLOAT_TAG as c_char),
+                           self.function.create_float64_constant(*num)),
             Expr::String(str) => {
                 let boxed = Box::new(str.to_string());
                 let tag = self.function.create_sbyte_constant(STRING_TAG as c_char);
@@ -246,7 +243,22 @@ impl CodeGen {
                         todo!("non float float binop ")
                     }
                 };
-                (tag, value)
+                // value is currently an integer, convert to float
+                let one = self.function.create_int_constant(0);
+                let one_f = self.function.create_float64_constant(1.0);
+                let zero_f = self.function.create_float64_constant(0.0);
+
+                let is_one = self.function.insn_eq(&one, &value);
+                let mut is_one_lbl = Label::new();
+                let mut done_lbl = Label::new();
+                self.function.insn_branch_if(&is_one, &mut is_one_lbl);
+                self.function.insn_store(&self.binop_scratch.1, &one_f);
+                self.function.insn_branch(&mut done_lbl);
+                self.function.insn_label(&mut is_one_lbl);
+                self.function.insn_store(&self.binop_scratch.1, &zero_f);
+                self.function.insn_label(&mut done_lbl);
+
+                (tag, self.function.insn_load(&self.binop_scratch.1))
             }
             Expr::LogicalOp(left, op, right) => {
                 todo!("logical op")
