@@ -27,17 +27,17 @@ impl Display for Stmt {
             Stmt::Assign(var, expr) => { write!(f, "{} = {}", var, expr)?; },
             Stmt::Group(group) => {
                 for elem in group {
-                    write!(f, "{}\n", elem)?;
+                    write!(f, "{}", elem)?;
                 }
             }
             Stmt::If(test, if_so, if_not) => {
-                write!(f, "if {} {{{}}}\n", test, if_so)?;
+                write!(f, "if {} {{{}}}", test, if_so)?;
                 if let Some(else_case) = if_not {
-                    write!(f, "else\n {{\n{} }}", else_case)?;
+                    write!(f, "else {{ {} }}", else_case)?;
                 }
             }
             Stmt::While(test, body) => {
-                write!(f, "while {} {{{}}}\n", test, body)?;
+                write!(f, "while {} {{{}}} ", test, body)?;
             }
         };
         write!(f, "\n")

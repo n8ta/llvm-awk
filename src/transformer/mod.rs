@@ -21,7 +21,5 @@ pub fn transform(program: parser::Program) -> Stmt {
     for end in program.ends {
         prog.push(end);
     }
-
-    println!("{:?}", prog);
     Stmt::Group(prog)
 }

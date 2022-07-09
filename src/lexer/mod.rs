@@ -205,7 +205,7 @@ impl<'a> Lexer<'a> {
                 } else if c.is_alphabetic() {
                     self.identifier()?;
                 } else {
-                    return Err(format!("Unexpected token::: `{}`", c));
+                    return Err(format!("Unexpected token: `{}`", c));
                 }
             }
         }

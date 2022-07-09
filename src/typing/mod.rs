@@ -1,3 +1,4 @@
+use std::env::var;
 use immutable_chunkmap::map::Map;
 use crate::{Expr};
 use crate::parser::{AwkT, Stmt, TypedExpr};
@@ -29,8 +30,8 @@ impl TypeAnalysis {
             }
             Stmt::If(test, if_so, if_not) => {
                 self.analyze_expr(test);
-                let mut if_so_map = MapT::new();
-                let mut if_not_map = MapT::new();
+                let mut if_so_map = self.map.clone();
+                let mut if_not_map = self.map.clone();
                 std::mem::swap(&mut if_so_map, &mut self.map);
 
                 self.analyze_stmt(if_so);
@@ -40,17 +41,13 @@ impl TypeAnalysis {
                     self.analyze_stmt(else_case)
                 }
                 std::mem::swap(&mut if_not_map, &mut self.map);
-                self.map = TypeAnalysis::merge_maps(&self.map, &if_so_map);
-                self.map = TypeAnalysis::merge_maps(&self.map, &if_not_map);
+                self.map = TypeAnalysis::merge_maps(&[&if_so_map, &if_not_map]);
             }
             Stmt::While(test, body) => {
                 self.analyze_expr(test);
-                let mut map = MapT::new();
-                std::mem::swap(&mut map, &mut self.map);
 
                 self.analyze_stmt(body);
 
-                self.map = TypeAnalysis::merge_maps(&self.map, &map);
                 self.analyze_expr(test);
                 self.analyze_stmt(body);
             }
@@ -98,15 +95,27 @@ impl TypeAnalysis {
         }
     }
 
-    fn merge_maps(map_a: &MapT, map_b: &MapT) -> MapT {
-        let mut merged = map_a.clone();
-        for x in map_b {
-            if let Some(map_a_val) = map_a.get(x.0) {
-                let merged_type = TypeAnalysis::merge_types(&x.1, map_a_val);
-                merged = merged.insert(x.0.clone(), merged_type).0;
+    fn merge_maps(children: &[&MapT]) -> MapT {
+        let mut merged = MapT::new();
+        for map in children {
+            for (name, var_type)  in map.into_iter() {
+                if let Some(existing_type) = merged.get(name) {
+                    merged = merged.insert(name.clone(), TypeAnalysis::merge_types(existing_type, var_type)).0;
+                } else {
+                    merged = merged.insert(name.clone(), *var_type).0;
+                }
             }
         }
         merged
+
+        // let mut merged = map_a.clone();
+        // for x in map_b {
+        //     if let Some(map_a_val) = map_a.get(x.0) {
+        //         let merged_type = TypeAnalysis::merge_types(&x.1, map_a_val);
+        //         merged = merged.insert(x.0.clone(), merged_type).0;
+        //     }
+        // }
+        // merged
     }
     fn merge_types(a: &AwkT, b: &AwkT) -> AwkT {
         match (a, b) {
@@ -147,7 +156,42 @@ fn test_typing_basic2() {
 }
 
 #[test]
-fn test_ifs() {
+fn test_if_basic() {
     test_it("BEGIN { a = 1; print a; if($1) { print a } } ",
             "a = (f 1); print (f a); if (s $(f 1)) { print (f a) }");
+}
+
+#[test]
+fn test_if_polluting() {
+    test_it("BEGIN { a = 1; print a; if($1) { a = \"a\"; } print a; print a;    } ",
+            "a = (f 1); print (f a); if (s $(f 1)) { a = (s \"a\"); } print (v a); print (v a)");
+}
+
+#[test]
+fn test_if_nonpolluting() {
+    test_it("BEGIN { a = 1; print a; if($1) { a = 5; } print a; } ",
+            "a = (f 1); print (f a); if (s $(f 1)) { a = (f 5); } print (f a);");
+}
+
+#[test]
+fn test_ifelse_polluting() {
+    test_it("BEGIN { a = 1; print a; if($1) { a = 5; } else { a = \"a\" } print a; } ",
+            "a = (f 1); print (f a); if (s $(f 1)) { a = (f 5); } else { a = (s \"a\") } print (v a);");
+}
+
+#[test]
+fn test_ifelse_swapping() {
+    test_it("BEGIN { a = 1; print a; if($1) { a = \"a\"; } else { a = \"a\" } print a; } ",
+            "a = (f 1); print (f a); if (s $(f 1)) { a = (s \"a\"); } else { a = (s \"a\") } print (s a);");
+}
+#[test]
+fn test_ifelse_swapping_2() {
+    test_it("BEGIN { a = \"a\"; print a; if($1) { a = 3; } else { a = 4 } print a; } ",
+            "a = (s \"a\"); print (s a); if (s $(f 1)) { a = ( f 3); } else { a = (f 4) } print (f a);");
+}
+
+#[test]
+fn test_if_else_polluting() {
+    test_it("BEGIN { a = 1; print a; if($1) { a = \"a\"; } else { a = \"a\" } print a; } ",
+            "a = (f 1); print (f a); if (s $(f 1)) { a = (s \"a\"); } else { a = (s \"a\"); } print (s a)");
 }

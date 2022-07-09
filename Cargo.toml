@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 gnu-libjit = { path = "../gnu-libjit" }
 immutable-chunkmap = "1.0.1"
+tempfile = "3.3.0"
 
 [[bin]]
 name = "llvm-awk"

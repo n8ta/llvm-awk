@@ -4,7 +4,7 @@ use std::ffi::c_void;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use crate::codgen::{CONST_STRING_TAG, FLOAT_TAG, TMP_STRING_TAG, VAR_STRING_TAG};
+use crate::codgen::{FLOAT_TAG, STRING_TAG};
 use crate::runtime::casting::{cast_float_to_string, cast_str_to_float, cast_to_runtime_data};
 
 fn get_next_file(data: &mut RuntimeData) -> bool {
@@ -23,17 +23,13 @@ fn get_next_file(data: &mut RuntimeData) -> bool {
 pub extern "C" fn print_value(_data: *mut c_void, tag: u8, value: f64) -> f64 {
     if tag == FLOAT_TAG {
         println!("{}", value);
-    } else if tag == VAR_STRING_TAG {
+    } else if tag == STRING_TAG {
         let string = cast_float_to_string(value);
-        println!("{}", string);
-        Box::leak(string);
-    } else if tag == CONST_STRING_TAG {
-        let string = cast_float_to_string(value);
-        println!("{}", string);
-        Box::leak(string);
-    } else if tag == TMP_STRING_TAG {
-        let string = cast_float_to_string(value);
-        println!("{}", string);
+        if string.ends_with("\n") {
+            print!("{}", string);
+        } else {
+            println!("{}", string);
+        }
         Box::leak(string);
     } else {
         panic!("print_value called w/bad tag {}", tag);
@@ -45,13 +41,7 @@ pub extern "C" fn print_value_capture(data: *mut c_void, tag: u8, value: f64) ->
     let data = cast_to_runtime_data(data);
     let output = if tag == FLOAT_TAG {
         format!("{}", value)
-    } else if tag == VAR_STRING_TAG {
-        let string = cast_float_to_string(value);
-        format!("{}", string)
-    } else if tag == CONST_STRING_TAG {
-        let string = cast_float_to_string(value);
-        format!("{}", string)
-    } else if tag == TMP_STRING_TAG {
+    } else if tag == STRING_TAG {
         let string = cast_float_to_string(value);
         format!("{}", string)
     } else {
@@ -64,6 +54,7 @@ pub extern "C" fn print_value_capture(data: *mut c_void, tag: u8, value: f64) ->
 }
 
 extern "C" fn next_line(data: *mut c_void) -> f64 {
+    // println!("next line called");
     let mut data = cast_to_runtime_data(data);
     if data.current_file.is_none() {
         if !get_next_file(data) {
@@ -79,11 +70,13 @@ extern "C" fn next_line(data: *mut c_void) -> f64 {
                 panic!("Failed to read from file. Error: {}", err)
             }
         }
+        // println!("read line: {}", result);
         if result.len() == 0 {
             if !get_next_file(data) {
                 return 0.0;
             }
         } else {
+            // println!("Assigning full line");
             data.full_line = Some(result);
             break;
         }
@@ -92,25 +85,28 @@ extern "C" fn next_line(data: *mut c_void) -> f64 {
 }
 
 extern "C" fn column(data_ptr: *mut c_void, tag: u8, value: f64) -> f64 {
+    // println!("column called {}", value);
     let mut data = cast_to_runtime_data(data_ptr.clone());
     if data.full_line.is_none() {
         return cast_str_to_float(Box::new("".to_string()));
     };
     let column = if tag == FLOAT_TAG {
         value.round() as i64
-    } else if tag == CONST_STRING_TAG || tag == VAR_STRING_TAG {
+    } else if tag == STRING_TAG {
         let num = string_to_number(data_ptr, tag, value);
         num.round() as i64
     } else {
         panic!("Called column with bad tag: {}", tag)
     };
     if column == 0 {
-        return cast_str_to_float(Box::new(data.full_line.clone().expect("full line to be set").clone()));
+        let line = data.full_line.as_ref().expect("full line to be set").clone();
+        return cast_str_to_float(Box::new(line));
     }
     let line = data.full_line.as_ref().unwrap();
     for (idx, str_res) in line.split(data.RS).enumerate() {
         if idx + 1 == (column as usize) {
-            return cast_str_to_float(Box::new(column.to_string()));
+            let mut string = str_res.to_string();
+            return cast_str_to_float(Box::new(string));
         }
     }
     return cast_str_to_float(Box::new("".to_string()));
@@ -122,9 +118,9 @@ extern "C" fn free_string(data: *mut c_void, tag: u8, value: f64) -> f64 {
 }
 
 extern "C" fn is_truthy(data: *mut c_void, tag: u8, value: f64) -> i32 {
-    return if tag == FLOAT_TAG {
+    if tag == FLOAT_TAG {
         if value != 0.0 { 1 } else { 0 }
-    } else if tag == VAR_STRING_TAG || tag ==  CONST_STRING_TAG || tag == TMP_STRING_TAG {
+    } else if tag == STRING_TAG {
         let str = cast_float_to_string(value);
         let length = str.len();
         Box::leak(str);
@@ -202,8 +198,8 @@ impl Runtime {
     pub fn new(files: Vec<String>, capture_output: bool) -> Runtime {
         let data = Box::new(RuntimeData::new(files));
         let ptr = Box::leak(data);
-        let print_value = if capture_output { print_value } else {
-            print_value_capture
+        let print_value = if capture_output { print_value_capture } else {
+            print_value
         } as *mut c_void;
         Runtime {
             runtime_data: (ptr as *mut RuntimeData) as *mut c_void,

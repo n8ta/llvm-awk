@@ -1,7 +1,7 @@
-mod runtime;
+mod types;
 
-pub use runtime::{Stmt, Expr, Program, TypedExpr, AwkT};
-pub use crate::parser::runtime::{PatternAction};
+pub use types::{Stmt, Expr, Program, TypedExpr, AwkT};
+pub use crate::parser::types::{PatternAction};
 use crate::lexer::{BinOp, Token, MathOp, TokenType};
 
 
