@@ -1,9 +1,10 @@
 use std::os::raw::c_void;
-use crate::runtime::RuntimeData;
+use crate::runtime::{CANARY, RuntimeData};
 
 pub fn cast_float_to_string(value: f64) -> Box<String> {
     unsafe {
-        let transmute_to_ptr = { std::mem::transmute::<f64, *mut u8>(value) };
+        let transmute_to_ptr: *mut u8 = { std::mem::transmute(value) };
+        println!("ptr is {:?}", transmute_to_ptr);
         let str_ptr = transmute_to_ptr as *mut String;
         let str: Box<String> = Box::from_raw(str_ptr);
         str
@@ -20,7 +21,12 @@ pub fn cast_str_to_float(mut value: Box<String>) -> f64 {
 pub fn cast_to_runtime_data(data: *mut c_void) -> &'static mut RuntimeData {
     unsafe {
         let data = data as *mut RuntimeData;
-        &mut *data
+        let d = &mut *data;
+        if d.canary != CANARY {
+            eprintln!("RUNTIME DATA LOADED WRONG. CANARY MISSING");
+            std::process::exit(-1);
+        }
+        d
     }
 }
 

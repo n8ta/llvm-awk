@@ -34,6 +34,7 @@ macro_rules! test {
 }
 
 test!(test_print_int, "{print 1;}", ONE_LINE, "1\n", 0);
+test!(test_print_str, "{print \"abc\";}", ONE_LINE, "abc\n", 0);
 test!(test_just_begin, "BEGIN { print 1; }", ONE_LINE, "1\n", 0);
 test!(test_e2e_begin_end, "BEGIN { print 1; } END { print 3; } END { print 4; }", ONE_LINE, "1\n3\n4\n", 0);
 test!(test_oo_beg_end, "END { print 3; } { print 2; } BEGIN {print 1;}", ONE_LINE, "1\n2\n3\n", 0);
@@ -49,34 +50,44 @@ test!(test_float_plus_int, "{print 1.1 + 1}", ONE_LINE, "2.1\n", 0);
 test!(test_grouping, "{print (1.1 + 3.3) + 1}", ONE_LINE, "5.4\n", 0);
 test!(test_float_add, "{print (1.0 + 2.0)}", ONE_LINE, "3\n", 0);
 test!(test_column_access_1_line, "{print $1; print $2; print $3; print $0}", ONE_LINE, "1\n2\n3\n1 2 3\n", 0);
-// test!(test_column_access_many_line, "{print $1; print $2; print $3; print $0}",NUMBERS, "1\n2\n3\n1 2 3\n4\n5\n6\n4 5 6\n7\n8\n9\n7 8 9\n", 0);
+test!(test_column_access_many_line, "{print $1; print $2; print $3; print $0}",NUMBERS, "1\n2\n3\n1 2 3\n4\n5\n6\n4 5 6\n7\n8\n9\n7 8 9\n", 0);
+
+//
 test!(test_if_no_else_truthy, "{if (1) { print 123; }}", ONE_LINE, "123\n", 0);
+test!(test_float_truthyness, "{if (0) { print \"abc\" } else { print \"cde\" }}", ONE_LINE, "cde\n", 0);
+test!(test_float_truthyness2, "{if (1) { print \"abc\" } else { print \"cde\" }}", ONE_LINE, "abc\n", 0);
+test!(test_float_truthyness3, "{if (100) { print \"abc\" } else { print \"cde\" }}", ONE_LINE, "abc\n", 0);
+test!(test_float_truthyness4, "{if (1000) { print \"abc\" } else { print \"cde\" }}", ONE_LINE, "abc\n", 0);
+
+test!(test_str_truthyness, "{if (\"\") { print \"abc\" } else { print \"cde\" }}", ONE_LINE, "cde\n", 0);
+test!(test_str_truthyness2, "{if (\"a\") { print \"abc\" } else { print \"cde\" }}", ONE_LINE, "abc\n", 0);
+test!(test_str_truthyness3, "{if (\"aaaaklasdjksfdakljfadskljafsdkljfas\") { print \"abc\" } else { print \"cde\" }}", ONE_LINE, "abc\n", 0);
+
+
 test!(test_assign_then_print, "{ a = 1.1; print a }", ONE_LINE, "1.1\n", 0);
 test!(test_assign_then_print_sep, "{ a = 1.1 } { print a }", ONE_LINE, "1.1\n", 0);
 test!(test_assign_then_end, "{ a = 1.1 } END { print a }", ONE_LINE, "1.1\n", 0);
+test!(test_print_col0, "{ a = $0 } END { print a }", NUMBERS, "7 8 9\n", 0);
 test!(test_print_col1, "{ a = $1 } END { print a }", NUMBERS, "7\n", 0);
 test!(test_print_col2, "{ a = $2 } END { print a }", NUMBERS, "8\n", 0);
 test!(test_print_col3, "{ a = $3 } END { print a }", NUMBERS, "9\n", 0);
-test!(test_print_col0, "{ a = $0 } END { print a }", NUMBERS, "7 8 9\n", 0);
 test!(test_print_col_big, "{ a = $44 } END { print a }", NUMBERS, "\n", 0);
-
-// test!(test_eqeq_true, "{ if (0==0) { print 123; } else {print 456;} }", ONE_LINE, "123\n", 0);
-// test!(test_eqeq_false, "{ if (0==1) { print 123; } else {print 456;} }", ONE_LINE, "456\n", 0);
-// test!(test_bangeq_true, "{ if (0!=0) { print 123; } else {print 456;} }", ONE_LINE, "456\n", 0);
-// test!(test_bangeq_false, "{ if (0!=1) { print 123; } else {print 456;} }", ONE_LINE, "123\n", 0);
+test!(test_eqeq_true, "{ if (0==0) { print 123; } else {print 456;} }", ONE_LINE, "123\n", 0);
+test!(test_eqeq_false, "{ if (0==1) { print 123; } else {print 456;} }", ONE_LINE, "456\n", 0);
+test!(test_bangeq_true, "{ if (0!=0) { print 123; } else {print 456;} }", ONE_LINE, "456\n", 0);
+test!(test_bangeq_false, "{ if (0!=1) { print 123; } else {print 456;} }", ONE_LINE, "123\n", 0);
 //
-// test!(test_lt_true, "{ if (0 < 123) { print 123; } else {print 456;} }", ONE_LINE, "123\n", 0);
-// test!(test_lt_false, "{ if (123 < 12) { print 123; } else {print 456;} }", ONE_LINE, "456\n", 0);
-// test!(test_lteq_true, "{ if (0 <= 1) { print 123; } else {print 123;} }", ONE_LINE, "123\n", 0);
-// test!(test_lteq_false, "{ if (1 <= 0) { print 123; } else {print 456;} }", ONE_LINE, "456\n", 0);
+test!(test_lt_true, "{ if (0 < 123) { print 123; } else {print 456;} }", ONE_LINE, "123\n", 0);
+test!(test_lt_false, "{ if (123 < 12) { print 123; } else {print 456;} }", ONE_LINE, "456\n", 0);
+test!(test_lteq_true, "{ if (0 <= 1) { print 123; } else {print 123;} }", ONE_LINE, "123\n", 0);
+test!(test_lteq_false, "{ if (1 <= 0) { print 123; } else {print 456;} }", ONE_LINE, "456\n", 0);
 //
-// test!(test_gt_true, "{ if (1 > 0) { print 123; } else {print 456;} }", ONE_LINE, "123\n", 0);
-// test!(test_gt_false, "{ if (0 > 1) { print 123; } else {print 456;} }", ONE_LINE, "456\n", 0);
-// test!(test_gteq_true, "{ if (1 >= 0) { print 123; } else {print 456;} }", ONE_LINE, "123\n", 0);
-// test!(test_gteq_false, "{ if (0 >= 1) { print 123; } else {print 456;} }", ONE_LINE, "456\n", 0);
+test!(test_gt_true, "{ if (1 > 0) { print 123; } else {print 456;} }", ONE_LINE, "123\n", 0);
+test!(test_gt_false, "{ if (0 > 1) { print 123; } else {print 456;} }", ONE_LINE, "456\n", 0);
+test!(test_gteq_true, "{ if (1 >= 0) { print 123; } else {print 456;} }", ONE_LINE, "123\n", 0);
+test!(test_gteq_false, "{ if (0 >= 1) { print 123; } else {print 456;} }", ONE_LINE, "456\n", 0);
 //
 test!(test_while, "{ while (x < 4) { x = x + 1; print x; } print 555; }", ONE_LINE, "1\n2\n3\n4\n555\n", 0);
-// test!(test_long_loop, "{ x = 0; while (x<5000000) { x = x + 1; } print x; }", ONE_LINE, "5000000\n", 0);
-// test!(test_long_loop2, "{ x = $1; print x; }", ONE_LINE, "5000000\n", 0);
-// test!(test_if_no_else_truthy_str, "{if (1) { print \"truthy\"; }}", ONE_LINE, "truthy\n", 0);
+test!(test_long_loop, "{ x = 0; while (x<5000000) { x = x + 1; } print x; }", ONE_LINE, "5000000\n", 0);
+test!(test_if_no_else_truthy_str, "{if (1) { print \"truthy\"; }}", ONE_LINE, "truthy\n", 0);
 //

@@ -1,5 +1,6 @@
 extern crate core;
 
+use std::mem::size_of;
 use crate::args::{AwkArgs, ProgramType};
 use crate::lexer::{lex};
 use crate::parser::{Expr, parse};
@@ -25,8 +26,8 @@ fn main() {
     };
     // let args = AwkArgs {
     //     dump: true,
-    //     program: ProgramType::CLI("BEGIN {x = 4.4; if (1) { x=4.4;} else { x = 3.2 }; print x }".to_string()),
-    //     files: vec![],
+    //     program: ProgramType::CLI("{print $1;}".to_string()),
+    //     files: vec!["one_line.txt".to_string()],
     //     save_executable: None,
     // };
     let program = match args.program.load() {
