@@ -49,7 +49,9 @@ pub extern "C" fn print_value_capture(data: *mut c_void, tag: u8, value: f64) ->
     };
     println!("{}", output);
     data.output.push_str(&output);
-    data.output.push('\n');
+    if !data.output.ends_with("\n") {
+        data.output.push('\n');
+    }
     0.0
 }
 
@@ -118,6 +120,7 @@ extern "C" fn free_string(data: *mut c_void, tag: u8, value: f64) -> f64 {
 }
 
 extern "C" fn is_truthy(data: *mut c_void, tag: u8, value: f64) -> i32 {
+    println!("is truthy {} {}", tag, value);
     if tag == FLOAT_TAG {
         if value != 0.0 { 1 } else { 0 }
     } else if tag == STRING_TAG {

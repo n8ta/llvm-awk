@@ -23,12 +23,12 @@ fn main() {
         Ok(args) => args,
         Err(_) => return,
     };
-    let args = AwkArgs {
-        dump: true,
-        program: ProgramType::CLI("BEGIN {x = 4.4; if (1) { x=4.4;} else { x = 3.2 }; print x }".to_string()),
-        files: vec![],
-        save_executable: None,
-    };
+    // let args = AwkArgs {
+    //     dump: true,
+    //     program: ProgramType::CLI("BEGIN {x = 4.4; if (1) { x=4.4;} else { x = 3.2 }; print x }".to_string()),
+    //     files: vec![],
+    //     save_executable: None,
+    // };
     let program = match args.program.load() {
         Ok(program) => program,
         Err(e) => {

@@ -90,7 +90,7 @@ impl CodeGen {
         self.function.create_void_ptr_constant(self.runtime.data_ptr())
     }
 
-    fn alloc_value(&mut self) -> ValuePtrT {
+    fn create_value(&mut self) -> ValuePtrT {
         let tag = self.function.create_value_int();
         let value = self.function.create_value_float64();
         let zero = self.function.create_float64_constant(0 as c_double);
@@ -104,7 +104,7 @@ impl CodeGen {
         let vars = variable_extract::extract(prog);
 
         for var in vars {
-            let val = self.alloc_value();
+            let val = self.create_value();
             self.scopes.insert(var, val);
         }
     }
@@ -188,7 +188,6 @@ impl CodeGen {
             Expr::NumberF64(num) => {
                 let res = (self.function.create_sbyte_constant(FLOAT_TAG as c_char),
                            self.function.create_float64_constant(*num));
-                println!("{}", self.function.dump().unwrap());
                 res
             }
             Expr::String(str) => {
@@ -256,11 +255,6 @@ impl CodeGen {
                 let var_ptr = self.scopes.get(var);
                 let tag = self.function.insn_load(&var_ptr.0);
                 let val = self.function.insn_load(&var_ptr.1);
-                let zero_tag = self.function.create_sbyte_constant(0);
-                let zero_float = self.function.create_float64_constant(0 as c_double);
-
-                let tag = self.function.insn_add(&tag, &zero_tag);
-                let val = self.function.insn_add(&val, &zero_float);
                 (tag, val)
             }
             Expr::Column(col) => {
