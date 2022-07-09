@@ -47,17 +47,17 @@ type ValuePtrT = ValueT;
 impl CodeGen {
     fn new(files: Vec<String>, capture: bool) -> Self {
         let mut context = Context::new();
-        let function = context.function(Abi::Cdecl, Context::float64_type(), vec![]).expect("to create function");
+        let mut function = context.function(Abi::Cdecl, Context::float64_type(), vec![]).expect("to create function");
         let runtime = Runtime::new(files, capture);
-        let binop_scratch_tag = function.alloca(1);
-        let binop_scratch_value = function.alloca(8);
+        let binop_scratch_tag = function.create_value_int();
+        let binop_scratch_value = function.create_value_float64();
         let binop_scratch = (binop_scratch_tag, binop_scratch_value);
         let codegen = CodeGen {
             function,
             scopes: Scopes::new(),
             context,
             runtime,
-            binop_scratch
+            binop_scratch,
         };
         codegen
     }
@@ -91,9 +91,9 @@ impl CodeGen {
     }
 
     fn alloc_value(&mut self) -> ValuePtrT {
-        let tag = self.function.alloca(1);
-        let value = self.function.alloca(8);
-        let zero= self.function.create_float64_constant(0 as c_double);
+        let tag = self.function.create_value_int();
+        let value = self.function.create_value_float64();
+        let zero = self.function.create_float64_constant(0 as c_double);
         let zero_tag = self.function.create_sbyte_constant(0);
         self.function.insn_store(&tag, &zero_tag);
         self.function.insn_store(&value, &zero);
@@ -185,8 +185,12 @@ impl CodeGen {
 
     fn compile_expr(&mut self, expr: &TypedExpr) -> ValueT {
         match &expr.expr {
-            Expr::NumberF64(num) => (self.function.create_sbyte_constant(FLOAT_TAG as c_char),
-                                     self.function.create_float64_constant(*num)),
+            Expr::NumberF64(num) => {
+                let res = (self.function.create_sbyte_constant(FLOAT_TAG as c_char),
+                           self.function.create_float64_constant(*num));
+                println!("{}", self.function.dump().unwrap());
+                res
+            }
             Expr::String(str) => {
                 let boxed = Box::new(str.to_string());
                 let tag = self.function.create_sbyte_constant(STRING_TAG as c_char);
@@ -203,7 +207,7 @@ impl CodeGen {
                     left = (zero.clone(), self.to_float(left));
                 }
                 if AwkT::Float != right_expr.typ {
-                    right =  (zero.clone(), self.to_float(right));
+                    right = (zero.clone(), self.to_float(right));
                 }
 
                 let res = match op {
@@ -238,7 +242,7 @@ impl CodeGen {
                             BinOp::MatchedBy => todo!("matched expr"),
                             BinOp::NotMatchedBy => todo!("matched expr"),
                         }
-                    },
+                    }
                     _ => {
                         todo!("non float float binop ")
                     }

@@ -38,7 +38,7 @@ test!(test_oo_beg_end, "END { print 3; } { print 2; } BEGIN {print 1;}", ONE_LIN
 test!(test_dup_beg_end, "end { print 4; } END { print 3; } { print 2; } begin { print 0; } BEGIN {print 1;} ", ONE_LINE, "0\n1\n2\n4\n3\n", 0);
 test!(test_simple_assignment, "{x = 0; print x;}", ONE_LINE, "0\n", 0);
 test!(test_assignment_in_ifs, "{x = 0; if (1) { x = 1 } else { x = 2.2 }; print x }", ONE_LINE, "1\n", 0);
-// test!(test_nested_if_assignment, "{x = 0; if (0) { x = 1 } else { x = 2.2 }; print x }", ONE_LINE, "2.2\n", 0);
+test!(test_nested_if_assignment, "{x = 0; if (0) { x = 1 } else { x = 2.2 }; print x }", ONE_LINE, "2.2\n", 0);
 // test!(test_mixed_int_float_assignment, "{x = 0; if (x) { x = 1 } else { x = 2.2 }; print x }", ONE_LINE, "2.2\n", 0);
 // test!(test_deeply_nested_mixed_assignment, "{x = 0; if (1) { if (1) { x = 1 } else { x = 2.2 } } else { if (1) { x = 1 } else { x = 4.2 } }; print x }", ONE_LINE, "1\n", 0);
 // test!(test_deeply_nested_mixed_assignment2, "{x = 0; if (1) { if (1) { x = 1 } else { x = 2.2 } } else { if (1) { x = 1 } else { x = 4.2 } }; { x = 4; x=5; x=5.5; print x; } }", ONE_LINE, "5.5\n", 0);
