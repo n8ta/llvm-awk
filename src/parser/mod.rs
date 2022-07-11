@@ -2,7 +2,7 @@ mod types;
 
 pub use types::{Stmt, Expr, Program, TypedExpr, AwkT};
 pub use crate::parser::types::{PatternAction};
-use crate::lexer::{BinOp, Token, MathOp, TokenType};
+use crate::lexer::{BinOp, Token, MathOp, TokenType, LogicalOp};
 
 
 enum PAType {
@@ -133,40 +133,62 @@ impl Parser {
         s
     }
 
+    fn stmt_and_optional_semicolon(&mut self) -> Stmt {
+        let stmt = self.stmt();
+        if self.peek().ttype() == TokenType::Semicolon {
+            self.consume(TokenType::Semicolon, "not possible");
+        }
+        stmt
+    }
+
+    fn stmt(&mut self) -> Stmt {
+        let stmt = if self.matches(vec![TokenType::Print]) {
+            Stmt::Print(self.expression())
+        } else if self.matches(vec![TokenType::For]) {
+            self.consume(TokenType::LeftParen, "Expected a '(' after the for keyword");
+            let init = self.stmt();
+            self.consume(TokenType::Semicolon, "Expected a ';' after for loop init statement");
+            let test = self.expression();
+            self.consume(TokenType::Semicolon, "Expected a ';' after for loop test statement");
+            let incr = self.stmt();
+            self.consume(TokenType::RightParen, "Expected a ')' to end for loop");
+            self.consume(TokenType::LeftBrace, "Expected a '{' to begin for loop body");
+            let body = self.stmts();
+            self.consume(TokenType::RightBrace, "Expected a '}' after for loop body");
+            Stmt::Group(vec![init, Stmt::While(test, Box::new(Stmt::Group(vec![body, incr])))])
+        } else if self.peek_next().ttype() == TokenType::Eq {
+            let str = if let Token::Ident(str) = self.consume(TokenType::Ident, "Expected identifier before '='") { str } else { panic!("Expected identifier before '='") };
+            self.consume(TokenType::Eq, "Expected '=' after identifier");
+            Stmt::Expr(TypedExpr::new_var(Expr::Assign(str, Box::new(self.expression()))))
+            // } else if self.matches(vec![TokenType::Ret]) {
+            //     self.return_stmt()
+        } else if self.matches(vec![TokenType::While]) {
+            self.consume(TokenType::LeftParen, "Must have paren after while");
+            let expr = self.expression();
+            self.consume(TokenType::RightParen, "Must have right parent after while statement test expression");
+            self.consume(TokenType::LeftBrace, "Must have brace after `while (expr)`");
+            let stmts = self.stmts();
+            self.consume(TokenType::RightBrace, "While loop must be followed by '}'");
+            Stmt::While(expr, Box::new(stmts))
+        } else if self.matches(vec![TokenType::Print]) {
+            let expr = self.expression();
+            Stmt::Print(expr)
+        } else if self.matches(vec![TokenType::If]) {
+            self.if_stmt()
+        } else if self.matches(vec![TokenType::LeftBrace]) {
+            let s = self.stmts();
+            self.consume(TokenType::RightBrace, "Expected a right brace after a group");
+            s
+        } else {
+            Stmt::Expr(self.expression())
+        };
+        stmt
+    }
+
     fn stmts(&mut self) -> Stmt {
         let mut stmts = vec![];
         while self.peek().ttype() != TokenType::RightBrace {
-            let stmt = if self.matches(vec![TokenType::Print]) {
-                Stmt::Print(self.expression())
-            } else if self.peek_next().ttype() == TokenType::Eq {
-                let str = if let Token::Ident(str) = self.consume(TokenType::Ident, "Expected identifier before '='") { str } else { panic!("Expected identifier before '='") };
-                self.consume(TokenType::Eq, "Expected '=' after identifier");
-                Stmt::Assign(str, self.expression())
-                // } else if self.matches(vec![TokenType::Ret]) {
-                //     self.return_stmt()
-            } else if self.matches(vec![TokenType::While]) {
-                self.consume(TokenType::LeftParen, "Must have paren after while");
-                let expr = self.expression();
-                self.consume(TokenType::RightParen, "Must have right parent after while statement test expression");
-                self.consume(TokenType::LeftBrace, "Must have brace after `while (expr)`");
-                let stmts = self.stmts();
-                self.consume(TokenType::RightBrace, "While loop must be followed by '}'");
-                Stmt::While(expr, Box::new(stmts))
-            } else if self.matches(vec![TokenType::Print]) {
-                let expr = self.expression();
-                Stmt::Print(expr)
-            } else if self.matches(vec![TokenType::If]) {
-                self.if_stmt()
-            } else if self.matches(vec![TokenType::LeftBrace]) {
-                let s = self.stmts();
-                self.consume(TokenType::RightBrace, "Expected a right brace after a group");
-                s
-            } else {
-                Stmt::Expr(self.expression())
-            };
-            if self.peek().ttype() == TokenType::Semicolon {
-                self.consume(TokenType::Semicolon, "not possible");
-            }
+            let stmt = self.stmt_and_optional_semicolon();
             stmts.push(stmt);
         }
         if stmts.len() == 1 {
@@ -174,13 +196,7 @@ impl Parser {
         }
         Stmt::Group(stmts)
     }
-    // fn return_stmt(&mut self) -> Stmt {
-    //     if self.peek().ttype() == TokenType::Semicolon {
-    //         Stmt::Return(None)
-    //     } else {
-    //         Stmt::Return(Some(self.expression()))
-    //     }
-    // }
+
     fn if_stmt(&mut self) -> Stmt {
         self.consume(TokenType::LeftParen, "Expected '(' after if");
         let predicate = self.expression();
@@ -196,9 +212,36 @@ impl Parser {
 
     fn expression(&mut self) -> TypedExpr {
         if self.matches(vec![TokenType::Column]) {
-            return Expr::Column(Box::new(self.compare())).into();
+            return Expr::Column(Box::new(self.assignment())).into();
         }
-        self.compare().into()
+        self.assignment().into()
+    }
+
+    fn assignment(&mut self) -> TypedExpr {
+        let lhs = self.logical_or();
+        if let Expr::Variable(var) = &lhs.expr {
+            let var = var.clone();
+            if self.matches(vec![TokenType::Eq]) {
+                return TypedExpr::new_var(Expr::Assign(var, Box::new(self.assignment())));
+            }
+        }
+        lhs
+    }
+
+    fn logical_or(&mut self) -> TypedExpr {
+        let mut expr = self.logical_and();
+        while self.matches(vec![TokenType::Or]) {
+            expr = TypedExpr::new_var(Expr::LogicalOp(Box::new(expr), LogicalOp::Or, Box::new(self.logical_and())))
+        }
+        expr
+    }
+
+    fn logical_and(&mut self) -> TypedExpr {
+        let mut expr = self.compare();
+        while self.matches(vec![TokenType::And]) {
+            expr = TypedExpr::new_var(Expr::LogicalOp(Box::new(expr), LogicalOp::And, Box::new(self.compare())))
+        }
+        expr
     }
 
     fn compare(&mut self) -> TypedExpr {
@@ -279,19 +322,31 @@ macro_rules! num {
 }
 macro_rules! bnum {
     ($value:expr) => {
-        Box::new(TypedExpr::new_var(Expr::NumberF64($value)))
+        Box::new(texpr!(Expr::NumberF64($value)))
+    }
+}
+
+macro_rules! btexpr {
+    ($value:expr) => {
+        Box::new(texpr!($value))
+    }
+}
+
+macro_rules! texpr {
+    ($value:expr) => {
+        TypedExpr::new_var($value)
     }
 }
 
 macro_rules! mathop {
     ($a:expr, $op:expr, $b:expr) => {
-        TypedExpr::new_var(Expr::MathOp($a, $op, $b))
+        texpr!(Expr::MathOp($a, $op, $b))
     }
 }
 
 macro_rules! binop {
     ($a:expr, $op:expr, $b:expr) => {
-        TypedExpr::new_var(Expr::BinOp($a, $op, $b))
+        texpr!(Expr::BinOp($a, $op, $b))
     }
 }
 
@@ -333,8 +388,8 @@ fn test_ast_oop() {
 fn test_ast_oop_2() {
     use crate::lexer::lex;
     let left = Box::new(num!(2.0));
-    let right = Box::new(TypedExpr::new_var(Expr::MathOp(Box::new(num!(1.0)), MathOp::Star, Box::new(num!(3.0)))));
-    let mult = Stmt::Expr(TypedExpr::new_var(Expr::MathOp(right, MathOp::Plus, left)));
+    let right = Box::new(texpr!(Expr::MathOp(Box::new(num!(1.0)), MathOp::Star, Box::new(num!(3.0)))));
+    let mult = Stmt::Expr(texpr!(Expr::MathOp(right, MathOp::Plus, left)));
     assert_eq!(parse(lex("{1 * 3 + 2;}").unwrap()), Program::new_action_only(mult));
 }
 
@@ -342,7 +397,7 @@ fn test_ast_oop_2() {
 #[test]
 fn test_ast_assign() {
     use crate::lexer::lex;
-    let stmt = Stmt::Assign(format!("abc"), num!(2.0));
+    let stmt = Stmt::Expr(texpr!(Expr::Assign(format!("abc"), bnum!(2.0))));
     assert_eq!(parse(lex("{abc = 2.0; }").unwrap()), Program::new_action_only(stmt));
 }
 
@@ -397,7 +452,7 @@ fn test_paser_begin_end() {
     let actual = parse(lex(str).unwrap());
     let begins = vec![Stmt::Print(num!(1.0)), Stmt::Print(num!(2.0))];
     let ends = vec![Stmt::Print(num!(3.0)), Stmt::Print(num!(4.0))];
-    let generic = PatternAction::new(Some(TypedExpr::new_var(Expr::Variable("a".to_string()))),
+    let generic = PatternAction::new(Some(texpr!(Expr::Variable("a".to_string()))),
                                      Stmt::Print(num!(5.0)));
     assert_eq!(actual, Program::new(begins, ends, vec![generic]));
 }
@@ -407,7 +462,7 @@ fn test_pattern_only() {
     use crate::lexer::lex;
     let str = "test";
     let actual = parse(lex(str).unwrap());
-    assert_eq!(actual, Program::new(vec![], vec![], vec![PatternAction::new_pattern_only(TypedExpr::new_var(Expr::Variable("test".to_string())))]));
+    assert_eq!(actual, Program::new(vec![], vec![], vec![PatternAction::new_pattern_only(texpr!(Expr::Variable("test".to_string())))]));
 }
 
 #[test]
@@ -423,9 +478,9 @@ fn test_column() {
     use crate::lexer::lex;
     let str = "$0+2 { print a; }";
     let actual = parse(lex(str).unwrap());
-    let body = Stmt::Print(TypedExpr::new_var(Expr::Variable("a".to_string())));
-    let pattern = Expr::Column(Box::new(TypedExpr::new_var(Expr::MathOp(bnum!(0.0), MathOp::Plus, bnum!(2.0)))));
-    let pa = PatternAction::new(Some(TypedExpr::new_var(pattern)), body);
+    let body = Stmt::Print(texpr!(Expr::Variable("a".to_string())));
+    let pattern = Expr::Column(Box::new(texpr!(Expr::MathOp(bnum!(0.0), MathOp::Plus, bnum!(2.0)))));
+    let pa = PatternAction::new(Some(texpr!(pattern)), body);
     assert_eq!(actual, Program::new(vec![], vec![], vec![pa]));
 }
 
@@ -441,14 +496,14 @@ fn test_while_l00p() {
 #[test]
 fn test_lt() {
     actual!(actual, "{ 1 < 3 }");
-    let body = Stmt::Expr(TypedExpr::new_var(Expr::BinOp(bnum!(1.0), BinOp::Less, bnum!(3.0))));
+    let body = Stmt::Expr(texpr!(Expr::BinOp(bnum!(1.0), BinOp::Less, bnum!(3.0))));
     assert_eq!(actual, sprogram!(body));
 }
 
 #[test]
 fn test_gt() {
     actual!(actual, "{ 1 > 3 }");
-    let body = Stmt::Expr(TypedExpr::new_var(Expr::BinOp(bnum!(1.0), BinOp::Greater, bnum!(3.0))));
+    let body = Stmt::Expr(texpr!(Expr::BinOp(bnum!(1.0), BinOp::Greater, bnum!(3.0))));
     assert_eq!(actual, sprogram!(body));
 }
 
@@ -456,35 +511,35 @@ fn test_gt() {
 #[test]
 fn test_lteq() {
     actual!(actual, "{ 1 <= 3 }");
-    let body = Stmt::Expr(TypedExpr::new_var(Expr::BinOp(bnum!(1.0), BinOp::LessEq, bnum!(3.0))));
+    let body = Stmt::Expr(texpr!(Expr::BinOp(bnum!(1.0), BinOp::LessEq, bnum!(3.0))));
     assert_eq!(actual, sprogram!(body));
 }
 
 #[test]
 fn test_gteq() {
     actual!(actual, "{ 1 >= 3 }");
-    let body = Stmt::Expr(TypedExpr::new_var(Expr::BinOp(bnum!(1.0), BinOp::GreaterEq, bnum!(3.0))));
+    let body = Stmt::Expr(texpr!(Expr::BinOp(bnum!(1.0), BinOp::GreaterEq, bnum!(3.0))));
     assert_eq!(actual, sprogram!(body));
 }
 
 #[test]
 fn test_eqeq() {
     actual!(actual, "{ 1 == 3 }");
-    let body = Stmt::Expr(TypedExpr::new_var(Expr::BinOp(bnum!(1.0), BinOp::EqEq, bnum!(3.0))));
+    let body = Stmt::Expr(texpr!(Expr::BinOp(bnum!(1.0), BinOp::EqEq, bnum!(3.0))));
     assert_eq!(actual, sprogram!(body));
 }
 
 #[test]
 fn test_bangeq() {
     actual!(actual, "{ 1 != 3 }");
-    let body = Stmt::Expr(TypedExpr::new_var(Expr::BinOp(bnum!(1.0), BinOp::BangEq, bnum!(3.0))));
+    let body = Stmt::Expr(texpr!(Expr::BinOp(bnum!(1.0), BinOp::BangEq, bnum!(3.0))));
     assert_eq!(actual, sprogram!(body));
 }
 
 #[test]
 fn test_bangeq_oo() {
     actual!(actual, "{ 1 != 3*4 }");
-    let body = Stmt::Expr(TypedExpr::new_var(Expr::BinOp(bnum!(1.0), BinOp::BangEq, Box::new(TypedExpr::new_var(Expr::MathOp(bnum!(3.0), MathOp::Star, bnum!(4.0)))))));
+    let body = Stmt::Expr(texpr!(Expr::BinOp(bnum!(1.0), BinOp::BangEq, Box::new(texpr!(Expr::MathOp(bnum!(3.0), MathOp::Star, bnum!(4.0)))))));
     assert_eq!(actual, sprogram!(body));
 }
 
@@ -501,8 +556,46 @@ fn test_cmp_oop1() {
 fn test_cmp_oop2() {
     actual!(actual, "{ a = 1*3 == 4 }");
 
-    let left = TypedExpr::new_var(Expr::MathOp(bnum!(1.0), MathOp::Star, bnum!(3.0)));
-    let body = TypedExpr::new_var(Expr::BinOp(Box::new(left), BinOp::EqEq, bnum!(4.0)));
-    let stmt = Stmt::Assign(format!("a"), body);
+    let left = texpr!(Expr::MathOp(bnum!(1.0), MathOp::Star, bnum!(3.0)));
+    let body = btexpr!(Expr::BinOp(Box::new(left), BinOp::EqEq, bnum!(4.0)));
+    let stmt = Stmt::Expr(texpr!(Expr::Assign(format!("a"), body)));
     assert_eq!(actual, sprogram!(stmt));
+}
+
+#[test]
+fn test_for_loop() {
+    actual!(actual, "{ for (a = 0; a < 1000; a = a + 1) { print a; } }");
+    let a = format!("a");
+    let init = texpr!(Expr::Assign(a.clone(), btexpr!(Expr::NumberF64(0.0))));
+    let test = texpr!(Expr::BinOp(btexpr!(Expr::Variable(a.clone())), BinOp::Less, bnum!(1000.0)));
+    let incr = texpr!(Expr::Assign(a.clone(), btexpr!(Expr::MathOp(btexpr!(Expr::Variable(a.clone())), MathOp::Plus, btexpr!(Expr::NumberF64(1.0))))));
+    let body = Stmt::Print(texpr!(Expr::Variable(a.clone())));
+    let expected = Stmt::Group(
+        vec![Stmt::Expr(init),
+             Stmt::While(test,
+                         Box::new(Stmt::Group(vec![body, Stmt::Expr(incr)])))]);
+    assert_eq!(actual, sprogram!(expected))
+}
+
+#[test]
+fn test_logical_and() {
+    actual!(actual, "{ a && b && c }");
+    let a = btexpr!(Expr::Variable("a".to_string()));
+    let b = btexpr!(Expr::Variable("b".to_string()));
+    let c = btexpr!(Expr::Variable("c".to_string()));
+    let a_and_b = btexpr!(Expr::LogicalOp(a, LogicalOp::And, b));
+    let expected = Stmt::Expr(texpr!(Expr::LogicalOp(a_and_b, LogicalOp::And, c)));
+    assert_eq!(actual, sprogram!(expected))
+}
+
+#[test]
+fn test_logical_or() {
+    actual!(actual, "{ a || b || c }");
+    let a = btexpr!(Expr::Variable("a".to_string()));
+    let b = btexpr!(Expr::Variable("b".to_string()));
+    let c = btexpr!(Expr::Variable("c".to_string()));
+    let a_and_b = btexpr!(Expr::LogicalOp(a, LogicalOp::Or, b));
+    let expected = Stmt::Expr(texpr!(Expr::LogicalOp(a_and_b, LogicalOp::Or, c)));
+    println!("actual {}", actual.pattern_actions[0].action);
+    assert_eq!(actual, sprogram!(expected))
 }

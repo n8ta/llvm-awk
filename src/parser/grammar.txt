@@ -22,7 +22,12 @@ compare_lteq: compare_bangeq ( '<=' compare_bangeq)*
 compare_bangeq: compare_eqeq ( '!=' compare_eqeq)*
 compare_eqeq: compare_gt ( '==' compare_gt)*
 compare_gt: compare_gteq ( '>' compare_gteq)*
-compare_gteq: primary ( '>=' primary)
+compare_gteq: log_and ( '>=' log_and)*
+log_and: log_or ('&&' log_or)*
+log_or: assignment ('||' assignment)*
+assignment:
+    | lvalue ('=' assignment)*   // a = (b = ( c= d))
+    | primary
 primary:
     num
     "(" expr ")"

@@ -1,4 +1,3 @@
-use std::env::var;
 use immutable_chunkmap::map::Map;
 use crate::{Expr};
 use crate::parser::{AwkT, Stmt, TypedExpr};
@@ -19,10 +18,6 @@ impl TypeAnalysis {
         match stmt {
             Stmt::Expr(expr) => self.analyze_expr(expr),
             Stmt::Print(expr) => self.analyze_expr(expr),
-            Stmt::Assign(var, value) => {
-                self.analyze_expr(value);
-                self.map = self.map.insert(var.clone(), value.typ).0;
-            }
             Stmt::Group(grouping) => {
                 for stmt in grouping {
                     self.analyze_stmt(stmt);
@@ -54,7 +49,7 @@ impl TypeAnalysis {
         }
     }
 
-    pub fn analyze_expr(&self, expr: &mut TypedExpr) {
+    pub fn analyze_expr(&mut self, expr: &mut TypedExpr) {
         match &mut expr.expr {
             Expr::NumberF64(_) => {
                 expr.typ = AwkT::Float;
@@ -78,6 +73,12 @@ impl TypeAnalysis {
                 self.analyze_expr(right);
                 expr.typ = AwkT::Float;
             }
+            Expr::Assign(var, value) => {
+                self.analyze_expr(value);
+                self.map = self.map.insert(var.clone(), value.typ).0;
+                expr.typ = value.typ;
+            }
+
             Expr::Variable(var) => {
                 if let Some(typ) = self.map.get(var) {
                     expr.typ = *typ;
@@ -158,40 +159,40 @@ fn test_typing_basic2() {
 #[test]
 fn test_if_basic() {
     test_it("BEGIN { a = 1; print a; if($1) { print a } } ",
-            "a = (f 1); print (f a); if (s $(f 1)) { print (f a) }");
+            "(f a = (f 1)); print (f a); if (s $(f 1)) { print (f a) }");
 }
 
 #[test]
 fn test_if_polluting() {
     test_it("BEGIN { a = 1; print a; if($1) { a = \"a\"; } print a; print a;    } ",
-            "a = (f 1); print (f a); if (s $(f 1)) { a = (s \"a\"); } print (v a); print (v a)");
+            "(f a = (f 1)); print (f a); if (s $(f 1)) { (s a = (s \"a\")); } print (v a); print (v a)");
 }
 
 #[test]
 fn test_if_nonpolluting() {
     test_it("BEGIN { a = 1; print a; if($1) { a = 5; } print a; } ",
-            "a = (f 1); print (f a); if (s $(f 1)) { a = (f 5); } print (f a);");
+            "(f a = (f 1)); print (f a); if (s $(f 1)) { (f a = (f 5)); } print (f a);");
 }
 
 #[test]
 fn test_ifelse_polluting() {
     test_it("BEGIN { a = 1; print a; if($1) { a = 5; } else { a = \"a\" } print a; } ",
-            "a = (f 1); print (f a); if (s $(f 1)) { a = (f 5); } else { a = (s \"a\") } print (v a);");
+            "(f a = (f 1)); print (f a); if (s $(f 1)) { (f a = (f 5)); } else { (s a = (s \"a\")) } print (v a);");
 }
 
 #[test]
 fn test_ifelse_swapping() {
     test_it("BEGIN { a = 1; print a; if($1) { a = \"a\"; } else { a = \"a\" } print a; } ",
-            "a = (f 1); print (f a); if (s $(f 1)) { a = (s \"a\"); } else { a = (s \"a\") } print (s a);");
+            "(f a = (f 1)); print (f a); if (s $(f 1)) { (s a = (s \"a\")); } else { (s a = (s \"a\")) } print (s a);");
 }
 #[test]
 fn test_ifelse_swapping_2() {
     test_it("BEGIN { a = \"a\"; print a; if($1) { a = 3; } else { a = 4 } print a; } ",
-            "a = (s \"a\"); print (s a); if (s $(f 1)) { a = ( f 3); } else { a = (f 4) } print (f a);");
+            "(s a = (s \"a\")); print (s a); if (s $(f 1)) { (f a = ( f 3)); } else { (f a = (f 4)) } print (f a);");
 }
 
 #[test]
 fn test_if_else_polluting() {
     test_it("BEGIN { a = 1; print a; if($1) { a = \"a\"; } else { a = \"a\" } print a; } ",
-            "a = (f 1); print (f a); if (s $(f 1)) { a = (s \"a\"); } else { a = (s \"a\"); } print (s a)");
+            "(f a = (f 1)); print (f a); if (s $(f 1)) { (s a = (s \"a\"); ) } else { (s a = (s \"a\")); } print (s a)");
 }

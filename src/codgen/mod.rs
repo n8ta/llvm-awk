@@ -8,7 +8,7 @@ use std::os::raw::{c_char, c_double, c_long, c_void};
 use gnu_libjit::{Abi, Context, Function, Label, Value};
 use crate::{Expr};
 use crate::codgen::scopes::Scopes;
-use crate::lexer::{BinOp, MathOp};
+use crate::lexer::{BinOp, LogicalOp, MathOp};
 use crate::parser::{AwkT, Stmt, TypedExpr};
 use crate::runtime::{Runtime};
 
@@ -95,22 +95,16 @@ impl CodeGen {
         self.runtime.output()
     }
 
-    fn compile(&mut self, prog: Stmt, files: &[String], dump: bool) {
+    fn compile(&mut self, prog: Stmt, _files: &[String], dump: bool) {
         let zero = self.function.create_float64_constant(0.0);
-
         self.define_all_vars(&prog);
         self.compile_stmt(&prog);
-
         self.function.insn_return(&zero);
-
         self.context.build_end();
         if dump {
             println!("{}", self.function.dump().unwrap());
         }
         self.function.compile();
-        // if dump {
-        //     println!("{}", self.function.dump().unwrap());
-        // }
     }
 
     fn runtime_data_ptr(&mut self) -> Value {
@@ -124,7 +118,6 @@ impl CodeGen {
 
         let zero = self.function.create_float64_constant(0 as c_double);
         let zero_tag = self.function.create_sbyte_constant(0);
-
 
         self.function.insn_store(&tag, &zero_tag);
         self.function.insn_store(&value, &zero);
@@ -212,13 +205,6 @@ impl CodeGen {
                     }
                 }
             }
-            Stmt::Assign(variable, expr) => {
-                let val = self.compile_expr(expr);
-                let variable_ptr = self.scopes.get(variable);
-                self.function.insn_store(&variable_ptr.tag, &val.tag);
-                self.function.insn_store(&variable_ptr.float, &val.float);
-                self.function.insn_store(&variable_ptr.pointer, &val.pointer);
-            }
             Stmt::Group(group) => {
                 for group in group {
                     self.compile_stmt(group)
@@ -226,9 +212,6 @@ impl CodeGen {
             }
             Stmt::If(test, if_so, if_not) => {
                 let test_value = self.compile_expr(test);
-                let ptr = self.runtime_data_ptr();
-
-                // let bool_value = self.function.insn_call_native(self.runtime.is_truthy, vec![ptr, test.0, test.1], Some(Context::int_type()));
                 let bool_value = self.truthy_ret_integer(&test_value, test.typ);
                 let mut then_label = Label::new();
                 let mut done_label = Label::new();
@@ -254,7 +237,6 @@ impl CodeGen {
                 let mut done_label = Label::new();
                 self.function.insn_label(&mut test_label);
                 let test_value = self.compile_expr(test);
-                let ptr = self.runtime_data_ptr();
                 let bool_value = self.truthy_ret_integer(&test_value, test.typ);
                 self.function.insn_branch_if_not(&bool_value, &mut done_label);
                 self.compile_stmt(body);
@@ -273,15 +255,27 @@ impl CodeGen {
         self.function.insn_branch_if(&is_float, &mut done_lbl);
 
         let ptr = self.runtime_data_ptr();
-        let res = self.function.insn_call_native(self.runtime.string_to_number, vec![ptr, value.tag, value.pointer], Some(Context::float64_type()));
+        let res = self.function.insn_call_native(self.runtime.string_to_number, vec![ptr, value.pointer], Some(Context::float64_type()));
         self.function.insn_store(&self.binop_scratch.float, &res);
 
         self.function.insn_label(&mut done_lbl);
         self.function.insn_load(&self.binop_scratch.float)
     }
 
+    fn assign(&mut self, var: &ValuePtrT, value: &ValueT) {
+        self.function.insn_store(&var.tag, &value.tag);
+        self.function.insn_store(&var.float, &value.float);
+        self.function.insn_store(&var.pointer, &value.pointer);
+    }
+
     fn compile_expr(&mut self, expr: &TypedExpr) -> ValueT {
         match &expr.expr {
+            Expr::Assign(var, value) => {
+                let new_value = self.compile_expr(value);
+                let var_ptrs = self.scopes.get(var).clone();
+                self.assign(&var_ptrs, &new_value);
+                new_value
+            }
             Expr::NumberF64(num) =>
                 ValueT::new(
                     self.function.create_sbyte_constant(FLOAT_TAG as c_char),
@@ -291,7 +285,6 @@ impl CodeGen {
                 let boxed = Box::new(str.to_string());
                 let tag = self.function.create_sbyte_constant(STRING_TAG as c_char);
                 let raw_ptr = unsafe { Box::into_raw(boxed) };
-                // println!("rawptr {:?}", raw_ptr);
                 let ptr = self.function.create_void_ptr_constant(raw_ptr as *mut c_void);
                 ValueT::new(tag, self.function.create_float64_constant(0.0), ptr)
             }
@@ -306,20 +299,11 @@ impl CodeGen {
                 if AwkT::Float != right_expr.typ {
                     right = ValueT::new(zero.clone(), self.to_float(right), self.zero_ptr.clone());
                 }
-
                 let res = match op {
-                    MathOp::Minus => {
-                        self.function.insn_sub(&left.float, &right.float)
-                    }
-                    MathOp::Plus => {
-                        self.function.insn_add(&left.float, &right.float)
-                    }
-                    MathOp::Slash => {
-                        self.function.insn_div(&left.float, &right.float)
-                    }
-                    MathOp::Star => {
-                        self.function.insn_mult(&left.float, &right.float)
-                    }
+                    MathOp::Minus => self.function.insn_sub(&left.float, &right.float),
+                    MathOp::Plus => self.function.insn_add(&left.float, &right.float),
+                    MathOp::Slash => self.function.insn_div(&left.float, &right.float),
+                    MathOp::Star => self.function.insn_mult(&left.float, &right.float),
                 };
                 ValueT::new(zero, res, self.zero_ptr.clone())
             }
@@ -362,7 +346,38 @@ impl CodeGen {
                 ValueT::new(tag, self.function.insn_load(&self.binop_scratch.float), self.zero_ptr.clone())
             }
             Expr::LogicalOp(left, op, right) => {
-                todo!("logical op")
+                let float_1 = self.function.create_float64_constant(1.0);
+                let float_0 = self.function.create_float64_constant(0.0);
+                match op {
+                    LogicalOp::And => {
+                        let mut ret_false = Label::new();
+                        let mut done = Label::new();
+                        let l = self.compile_expr(left);
+                        let l = self.truthy_ret_integer(&l, left.typ);
+                        self.function.insn_branch_if_not(&l, &mut ret_false);
+                        let r = self.compile_expr(right);
+                        let r = self.truthy_ret_integer(&r, right.typ);
+                        self.function.insn_branch_if_not(&r, &mut ret_false);
+                        self.function.insn_store(&self.binop_scratch.float, &float_1);
+                        self.function.insn_branch(&mut done);
+                        self.function.insn_label(&mut ret_false);
+                        self.function.insn_store(&self.binop_scratch.float, &float_0);
+                        self.function.insn_branch(&mut done);
+                        self.function.insn_label(&mut done);
+                        let tag = self.function.create_sbyte_constant(FLOAT_TAG as c_char);
+                        let result_f = self.function.insn_load(&self.binop_scratch.float);
+                        ValueT::new(tag, result_f, self.zero_ptr.clone())
+                    }
+                    LogicalOp::Or => {
+                        let done = Label::new();
+                        let l = self.compile_expr(left);
+                        let l = self.truthy_ret_integer(&l, left.typ);
+
+
+
+                    }
+                }
+                todo!("wip")
             }
             Expr::Variable(var) => {
                 let var_ptr = self.scopes.get(var);
@@ -374,12 +389,9 @@ impl CodeGen {
             Expr::Column(col) => {
                 let column = self.compile_expr(col);
                 let ptr = self.runtime_data_ptr();
-                let val = self.function.insn_call_native(
-                    self.runtime.column,
-                    vec![ptr, column.tag, column.float, column.pointer],
-                    Some(Context::void_ptr_type()));
+                let val = self.function.insn_call_native(self.runtime.column, vec![ptr, column.tag, column.float, column.pointer], Some(Context::void_ptr_type()));
                 let tag = self.function.create_sbyte_constant(STRING_TAG as c_char);
-                ValueT::new(tag,  self.function.create_float64_constant(0.0), val)
+                ValueT::new(tag, self.function.create_float64_constant(0.0), val)
             }
             Expr::Call => {
                 let one = self.function.create_sbyte_constant(FLOAT_TAG as c_char);

@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use crate::codgen::{FLOAT_TAG, STRING_TAG};
-use crate::runtime::casting::{cast_float_to_string, cast_str_to_float, cast_to_runtime_data};
+use crate::runtime::casting::{cast_float_to_string, cast_to_runtime_data};
 
 fn get_next_file(data: &mut RuntimeData) -> bool {
     if let Some(next_file) = data.files.pop() {
@@ -125,12 +125,9 @@ extern "C" fn free_string(data: *mut c_void, tag: u8, value: f64) -> f64 {
     0.0
 }
 
-extern "C" fn string_to_number(data: *mut c_void, tag: u8, value: f64) -> f64 {
-    if tag == FLOAT_TAG {
-        panic!("Tried to convert number to number????")
-    }
-    let string = cast_float_to_string(value);
-    let number = string.parse::<f64>().expect(&format!("couldn't convert string to number {}", string));
+extern "C" fn string_to_number(data: *mut c_void, ptr: *mut String) -> f64 {
+    let string = unsafe { Box::from_raw(ptr) };
+    let number: f64 = string.parse().expect(&format!("couldn't convert string to number {}", string));
     Box::leak(string);
     number
 }

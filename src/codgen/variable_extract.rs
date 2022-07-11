@@ -12,11 +12,6 @@ fn extract_stmt(stmt: &Stmt, vars: &mut HashSet<String>) {
     match stmt {
         Stmt::Expr(expr) => extract_expr(expr, vars),
         Stmt::Print(expr) => extract_expr(expr, vars),
-        Stmt::Assign(var, val) => {
-            extract_expr(val, vars);
-            vars.insert(var.clone());
-        }
-        // Stmt::Return(expr) => if let Some(expr) = expr { extract_expr(expr, vars); },
         Stmt::Group(group) => {
             for elem in group {
                 extract_stmt(elem, vars);
@@ -55,5 +50,10 @@ fn extract_expr(expr: &TypedExpr, vars: &mut HashSet<String>) {
         }
         Expr::Column(col) => extract_expr(col, vars),
         Expr::Call => {}
+
+        Expr::Assign(var, value) => {
+            vars.insert(var.clone());
+            extract_expr(value, vars);
+        }
     }
 }

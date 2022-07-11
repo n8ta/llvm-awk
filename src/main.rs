@@ -1,7 +1,6 @@
 extern crate core;
 
-use std::mem::size_of;
-use crate::args::{AwkArgs, ProgramType};
+use crate::args::{AwkArgs};
 use crate::lexer::{lex};
 use crate::parser::{Expr, parse};
 use crate::transformer::transform;

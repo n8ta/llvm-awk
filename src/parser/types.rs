@@ -1,4 +1,4 @@
-use std::fmt::{Display, Formatter, write};
+use std::fmt::{Display, Formatter};
 use crate::lexer::{BinOp, MathOp, LogicalOp};
 
 
@@ -13,7 +13,6 @@ pub enum AwkT {
 pub enum Stmt {
     Expr(TypedExpr),
     Print(TypedExpr),
-    Assign(String, TypedExpr),
     Group(Vec<Stmt>),
     If(TypedExpr, Box<Stmt>, Option<Box<Stmt>>),
     While(TypedExpr, Box<Stmt>),
@@ -24,7 +23,6 @@ impl Display for Stmt {
         match self {
             Stmt::Expr(expr) => { write!(f, "{}", expr)? },
             Stmt::Print(expr) => { write!(f, "print {}", expr)? },
-            Stmt::Assign(var, expr) => { write!(f, "{} = {}", var, expr)?; },
             Stmt::Group(group) => {
                 for elem in group {
                     write!(f, "{}", elem)?;
@@ -80,6 +78,7 @@ impl Into<TypedExpr> for Expr {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
+    Assign(String, Box<TypedExpr>),
     NumberF64(f64),
     String(String),
     BinOp(Box<TypedExpr>, BinOp, Box<TypedExpr>),
@@ -104,7 +103,8 @@ impl Display for TypedExpr {
 impl Display for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Expr::Call => write!(f, "call"),
+            Expr::Assign(var, expr) => write!(f, "{} = {}", var, expr),
+            Expr::Call => write!(f, "check_if_there_is_another_line"),
             Expr::Variable(n) => write!(f, "{}", n),
             Expr::String(str) => write!(f, "\"{}\"", str),
             Expr::NumberF64(n) => write!(f, "{}", n),
