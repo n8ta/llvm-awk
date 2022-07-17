@@ -15,6 +15,7 @@ mod args;
 mod transformer;
 mod runtime;
 mod typing;
+mod columns;
 
 
 fn main() {

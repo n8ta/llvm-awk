@@ -348,7 +348,7 @@ impl CodeGen {
             Expr::LogicalOp(left, op, right) => {
                 let float_1 = self.function.create_float64_constant(1.0);
                 let float_0 = self.function.create_float64_constant(0.0);
-                match op {
+                let res = match op {
                     LogicalOp::And => {
                         let mut ret_false = Label::new();
                         let mut done = Label::new();
@@ -372,12 +372,12 @@ impl CodeGen {
                         let done = Label::new();
                         let l = self.compile_expr(left);
                         let l = self.truthy_ret_integer(&l, left.typ);
-
+                        todo!("logical is a WIP")
 
 
                     }
-                }
-                todo!("wip")
+                };
+                res
             }
             Expr::Variable(var) => {
                 let var_ptr = self.scopes.get(var);

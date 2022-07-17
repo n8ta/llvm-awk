@@ -7,18 +7,6 @@ use std::path::PathBuf;
 use crate::codgen::{FLOAT_TAG, STRING_TAG};
 use crate::runtime::casting::{cast_float_to_string, cast_to_runtime_data};
 
-fn get_next_file(data: &mut RuntimeData) -> bool {
-    if let Some(next_file) = data.files.pop() {
-        let next_file = match File::open(PathBuf::from(next_file.clone())) {
-            Ok(f) => f,
-            Err(err) => panic!("Failed to open file '{}'", next_file)
-        };
-        data.current_file = Some(Box::new(BufReader::new(next_file)));
-        true
-    } else {
-        false
-    }
-}
 
 pub extern "C" fn print_string(_data: *mut c_void, value: *mut String) {
     println!("printing str {:?}", value);
@@ -60,64 +48,11 @@ pub extern "C" fn print_float_capture(data: *mut c_void, value: f64) {
 }
 
 extern "C" fn next_line(data: *mut c_void) -> f64 {
-    let mut data = cast_to_runtime_data(data);
-    if data.current_file.is_none() {
-        if !get_next_file(data) {
-            return 0.0;
-        }
-    }
-    loop {
-        let file = data.current_file.as_mut().unwrap();
-        let mut result = String::new();
-        match file.read_line(&mut result) {
-            Ok(_) => {}
-            Err(err) => {
-                panic!("Failed to read from file. Error: {}", err)
-            }
-        }
-        // println!("read line: {}", result);
-        if result.len() == 0 {
-            if !get_next_file(data) {
-                return 0.0;
-            }
-        } else {
-            // println!("Assigning full line");
-            data.full_line = Some(result);
-            break;
-        }
-    }
     1.0
 }
 
 extern "C" fn column(data_ptr: *mut c_void, tag: u8, value: f64, pointer: *mut String) -> *mut String {
-    let mut data = cast_to_runtime_data(data_ptr.clone());
-    if data.full_line.is_none() {
-        return Box::into_raw(Box::new("".to_string()))
-    };
-    let column = if tag == FLOAT_TAG {
-        value.round() as i64
-    } else if tag == STRING_TAG {
-        let str = unsafe { Box::from_raw(pointer) };
-        let number = str.parse::<f64>().expect(&format!("couldn't convert string to number {}", str));
-        Box::into_raw(str);
-        number.round() as i64
-    } else {
-        panic!("Called column with bad tag: {}", tag)
-    };
-    if column == 0 {
-        let line = data.full_line.as_ref().expect("full line to be set").clone();
-        return Box::into_raw(Box::new(line))
-    }
-    let line = data.full_line.as_ref().unwrap();
-    for (idx, str_res) in line.split(data.RS).enumerate() {
-        if idx + 1 == (column as usize) {
-            let mut string = str_res.to_string();
-            let ptr =Box::into_raw(Box::new(string.clone()));
-            // println!("column returning {}, ptr {:?}", &string, &ptr);
-            return ptr;
-        }
-    }
-    return Box::into_raw(Box::new("".to_string()));
+    todo!("wip")
 }
 
 extern "C" fn free_string(data: *mut c_void, tag: u8, value: f64) -> f64 {
@@ -165,19 +100,13 @@ pub struct RuntimeData {
     RS: char,
     FS: char,
     canary: String,
-    files: Vec<String>,
-    current_file: Option<Box<dyn BufRead>>,
-    full_line: Option<String>,
     output: String,
 }
 
 impl RuntimeData {
     pub fn new(files: Vec<String>) -> RuntimeData {
         RuntimeData {
-            files,
             canary: String::from(CANARY),
-            current_file: None,
-            full_line: None,
             RS: ' ',
             FS: '\n',
             output: String::new(),
