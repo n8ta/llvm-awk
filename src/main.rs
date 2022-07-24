@@ -1,6 +1,6 @@
 extern crate core;
 
-use crate::args::{AwkArgs};
+use crate::args::{AwkArgs, ProgramType};
 use crate::lexer::{lex};
 use crate::parser::{Expr, parse};
 use crate::transformer::transform;
@@ -24,12 +24,12 @@ fn main() {
         Ok(args) => args,
         Err(_) => return,
     };
-    // let args = AwkArgs {
-    //     dump: true,
-    //     program: ProgramType::CLI("{print $1;}".to_string()),
-    //     files: vec!["one_line.txt".to_string()],
-    //     save_executable: None,
-    // };
+    let args = AwkArgs {
+        debug: true,
+        program: ProgramType::CLI("{ a = $1; }".to_string()),
+        files: vec!["numbers.txt".to_string()],
+        save_executable: None,
+    };
     let program = match args.program.load() {
         Ok(program) => program,
         Err(e) => {
@@ -43,5 +43,10 @@ fn main() {
 
     analyze(&mut ast);
 
-    codgen::compile_and_run(ast, &args.files, args.dump);
+    if args.debug {
+        codgen::compile_and_capture(ast, &args.files);
+    } else {
+        codgen::compile_and_run(ast, &args.files);
+    }
+
 }

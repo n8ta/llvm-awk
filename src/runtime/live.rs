@@ -49,6 +49,7 @@ extern "C" fn next_line(data: *mut c_void) -> f64 {
 }
 
 extern "C" fn column(data_ptr: *mut c_void, tag: u8, value: f64, pointer: *mut String) -> *mut String {
+    println!("getting column {} {} {:?}", tag, value, pointer);
     let data = cast_to_runtime_data(data_ptr);
     let idx =
         if tag == FLOAT_TAG {

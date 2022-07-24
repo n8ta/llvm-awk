@@ -4,12 +4,14 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use crate::codgen::{FLOAT_TAG, STRING_TAG};
 use crate::columns::Columns;
+use crate::runtime::call_log::{Call, CallLog};
 use crate::runtime::Runtime;
 
 pub const CANARY: &str = "this is the canary!";
 
 pub extern "C" fn print_string(data: *mut c_void, value: *mut String) {
     let data = cast_to_runtime_data(data);
+    data.calls.log(Call::PrintString);
     let str = unsafe { Box::from_raw(value) };
 
 
@@ -19,45 +21,61 @@ pub extern "C" fn print_string(data: *mut c_void, value: *mut String) {
         format!("{}\n", str)
     };
     data.output.push_str(&res);
+    println!("{}", str);
     Box::into_raw(str);
 }
 
 pub extern "C" fn print_float(data: *mut c_void, value: f64) {
     let data = cast_to_runtime_data(data);
+    data.calls.log(Call::PrintFloat);
     let res = format!("{}\n", value);
     data.output.push_str(&res);
+    println!("{}", value);
 }
 
 extern "C" fn next_line(data: *mut c_void) -> f64 {
     let data = cast_to_runtime_data(data);
+    data.calls.log(Call::NextLine);
     if data.columns.next_line() { 1.0 } else { 0.0 }
 }
 
 extern "C" fn column(data_ptr: *mut c_void, tag: u8, value: f64, pointer: *mut String) -> *mut String {
     let data = cast_to_runtime_data(data_ptr);
-    let idx =
+    let idx_f =
         if tag == FLOAT_TAG {
             value
         } else {
             string_to_number(data_ptr, pointer)
         };
-    let idx = idx.round() as usize;
-    Box::into_raw(Box::new(data.columns.get(idx)))
+    let idx = idx_f.round() as usize;
+    let str = data.columns.get(idx);
+    data.calls.log(Call::Column(idx_f, str.clone()));
+    Box::into_raw(Box::new(str))
 }
 
-extern "C" fn free_string(data: *mut c_void, ptr: *mut String) -> f64 {
-    unsafe { Box::from_raw(ptr) };
+extern "C" fn free_string(data_ptr: *mut c_void, ptr: *mut String) -> f64 {
+    let data = cast_to_runtime_data(data_ptr);
+    data.calls.log(Call::FreeString);
+
+    println!("freeing {:?}", ptr);
+    let data = unsafe { Box::from_raw(ptr) };
+    println!("\t string is: '{}'", data);
     0.0
 }
 
-extern "C" fn string_to_number(data: *mut c_void, ptr: *mut String) -> f64 {
+extern "C" fn string_to_number(data_ptr: *mut c_void, ptr: *mut String) -> f64 {
+    let data = cast_to_runtime_data(data_ptr);
+    data.calls.log(Call::StringToNumber);
+
     let string = unsafe { Box::from_raw(ptr) };
     let number: f64 = string.parse().expect(&format!("couldn't convert string to number {}", string));
     Box::leak(string);
     number
 }
 
-extern "C" fn number_to_string(data: *mut c_void, tag: u8, value: f64) -> f64 {
+extern "C" fn number_to_string(data_ptr: *mut c_void, tag: u8, value: f64) -> f64 {
+    let data = cast_to_runtime_data(data_ptr);
+    data.calls.log(Call::NumberToString);
     if tag != FLOAT_TAG {
         panic!("Tried to convert non-number to string")
     }
@@ -70,13 +88,17 @@ extern "C" fn number_to_string(data: *mut c_void, tag: u8, value: f64) -> f64 {
     return unsafe { std::mem::transmute(ptr) };
 }
 
-extern "C" fn copy_string(data: *mut c_void, ptr: *mut c_void) -> *mut String {
-    let original: Box<String> = unsafe { Box::from_raw(ptr as *mut String) };
+extern "C" fn copy_string(data_ptr: *mut c_void, ptr: *mut String) -> *mut String {
+    let data = cast_to_runtime_data(data_ptr);
+    data.calls.log(Call::CopyString);
+
+    println!("Copying string {:?}", ptr);
+    let original: Box<String> = unsafe { Box::from_raw(ptr) };
+    println!("\t string is: {}", original);
     let copy = original.clone();
     Box::into_raw(original);
     Box::into_raw(copy) as *mut String
 }
-
 
 
 pub struct TestRuntime {
@@ -91,12 +113,11 @@ pub struct TestRuntime {
     copy_string: *mut c_void,
 }
 
-
-
 pub struct RuntimeData {
     columns: Columns,
     canary: String,
     output: String,
+    calls: CallLog,
 }
 
 impl RuntimeData {
@@ -105,6 +126,7 @@ impl RuntimeData {
             canary: String::from(CANARY),
             columns: Columns::new(files),
             output: String::new(),
+            calls: CallLog::new(),
         }
     }
 }
@@ -181,6 +203,7 @@ pub fn cast_float_to_string(value: f64) -> Box<String> {
         str
     }
 }
+
 pub fn cast_str_to_float(mut value: Box<String>) -> f64 {
     let ptr = &mut *value as *mut String;
     let res = unsafe { std::mem::transmute::<*mut String, f64>(ptr) };

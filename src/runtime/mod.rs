@@ -1,6 +1,7 @@
 mod live;
 mod casting;
 mod testing;
+mod call_log;
 
 use std::ffi::c_void;
 pub use live::LiveRuntime;
