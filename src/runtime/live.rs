@@ -153,35 +153,25 @@ impl Runtime for LiveRuntime {
     fn next_line(&self) -> *mut c_void {
         self.next_line
     }
-
     fn column(&self) -> *mut c_void {
         self.column
     }
-
     fn free_string(&self) -> *mut c_void {
         self.free_string
     }
-
-    fn string_to_number(&self) -> *mut c_void {
-        self.string_to_number
-    }
-
+    fn string_to_number(&self) -> *mut c_void { self.string_to_number }
     fn copy_string(&self) -> *mut c_void {
         self.copy_string
     }
-
     fn number_to_string(&self) -> *mut c_void {
         self.number_to_string
     }
-
     fn print_string(&self) -> *mut c_void {
         self.print_string
     }
-
     fn print_float(&self) -> *mut c_void {
         self.print_float
     }
-
     fn data_ptr(&self) -> *mut c_void {
         self.runtime_data
     }

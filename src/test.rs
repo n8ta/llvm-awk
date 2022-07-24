@@ -16,7 +16,17 @@ fn test_it(prog: &str, file: &'static str, expected_output: &str, _status: i32) 
     let files = vec![file_path.to_str().unwrap().to_string()];
 
 
-    let result = codgen::compile_and_capture(ast, &files);
+    let test_runtime = codgen::compile_and_capture(ast, &files);
+
+    let strings_in = test_runtime.strings_in();
+    let strings_out = test_runtime.strings_out();
+    if strings_in != strings_out {
+        eprintln!("{} strings given to libjit but only {} were freed", strings_in, strings_out);
+        eprintln!("program: {}", prog)
+    }
+    assert_eq!(strings_in, strings_out);
+
+    let result = test_runtime.output();
     if result != expected_output {
         eprintln!("Expected:\n{}\nGot:\n{}", expected_output, &result);
     }
@@ -85,8 +95,10 @@ test!(test_gteq_false, "{ if (0 >= 1) { print 123; } else {print 456;} }", ONE_L
 test!(test_while, "{ while (x < 4) { x = x + 1; print x; } print 555; }", ONE_LINE, "1\n2\n3\n4\n555\n", 0);
 test!(test_long_loop, "{ x = 0; while (x<5000000) { x = x + 1; } print x; }", ONE_LINE, "5000000\n", 0);
 test!(test_if_no_else_truthy_str, "{if (1) { print \"truthy\"; }}", ONE_LINE, "truthy\n", 0);
-test!(test_mixed_addition, "BEGIN { x = 0; x = x + \"123\"; x = x + 5; print x; }", ONE_LINE, "128\n", 0);
+test!(test_mixed_addition0, "BEGIN { x = 0; x = x + \"123\"; print x; }", ONE_LINE, "123\n", 0);
+test!(test_mixed_addition1, "BEGIN { x = 0; x = x + \"123\"; x = x + 5; print x; }", ONE_LINE, "128\n", 0);
 test!(test_mixed_addition2, "BEGIN { x = 0; x = x + (\"123\" + 44 + \"33\"); x = x + 5; print x; }", ONE_LINE, "205\n", 0);
+test!(test_mixed_addition3, "BEGIN { x = 0; x = x + (\"1\" + 2); print x; }", ONE_LINE, "3\n", 0);
 test!(test_assignment_expr, "BEGIN { x = (y = 123) print x}", ONE_LINE, "123\n", 0);
 test!(test_assignment_expr2, "BEGIN { x = ((y = 123) + (z = 4)) print x}", ONE_LINE, "127\n", 0);
 test!(test_nested_assignment, "BEGIN { a = b = c = d = e = f = 4 < 10; print d; print a; }", ONE_LINE, "1\n1\n",0);

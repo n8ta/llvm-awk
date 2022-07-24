@@ -19,14 +19,14 @@ mod columns;
 
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    let args = match AwkArgs::new(args) {
-        Ok(args) => args,
-        Err(_) => return,
-    };
+    // let args: Vec<String> = std::env::args().collect();
+    // let args = match AwkArgs::new(args) {
+    //     Ok(args) => args,
+    //     Err(_) => return,
+    // };
     let args = AwkArgs {
         debug: true,
-        program: ProgramType::CLI("{ a = $1; }".to_string()),
+        program: ProgramType::CLI("BEGIN { x = 0; x = x + (\"1\" + 2); print x; }".to_string()),
         files: vec!["numbers.txt".to_string()],
         save_executable: None,
     };

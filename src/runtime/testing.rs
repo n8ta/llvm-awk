@@ -50,12 +50,14 @@ extern "C" fn column(data_ptr: *mut c_void, tag: u8, value: f64, pointer: *mut S
     let idx = idx_f.round() as usize;
     let str = data.columns.get(idx);
     data.calls.log(Call::Column(idx_f, str.clone()));
+    data.string_out += 1;
     Box::into_raw(Box::new(str))
 }
 
 extern "C" fn free_string(data_ptr: *mut c_void, ptr: *mut String) -> f64 {
     let data = cast_to_runtime_data(data_ptr);
     data.calls.log(Call::FreeString);
+    data.strings_in += 1;
 
     println!("freeing {:?}", ptr);
     let data = unsafe { Box::from_raw(ptr) };
@@ -66,6 +68,7 @@ extern "C" fn free_string(data_ptr: *mut c_void, ptr: *mut String) -> f64 {
 extern "C" fn string_to_number(data_ptr: *mut c_void, ptr: *mut String) -> f64 {
     let data = cast_to_runtime_data(data_ptr);
     data.calls.log(Call::StringToNumber);
+    data.strings_in += 1;
 
     let string = unsafe { Box::from_raw(ptr) };
     let number: f64 = string.parse().expect(&format!("couldn't convert string to number {}", string));
@@ -75,6 +78,7 @@ extern "C" fn string_to_number(data_ptr: *mut c_void, ptr: *mut String) -> f64 {
 
 extern "C" fn number_to_string(data_ptr: *mut c_void, tag: u8, value: f64) -> f64 {
     let data = cast_to_runtime_data(data_ptr);
+    data.string_out += 1;
     data.calls.log(Call::NumberToString);
     if tag != FLOAT_TAG {
         panic!("Tried to convert non-number to string")
@@ -91,6 +95,7 @@ extern "C" fn number_to_string(data_ptr: *mut c_void, tag: u8, value: f64) -> f6
 extern "C" fn copy_string(data_ptr: *mut c_void, ptr: *mut String) -> *mut String {
     let data = cast_to_runtime_data(data_ptr);
     data.calls.log(Call::CopyString);
+    data.string_out += 1;
 
     println!("Copying string {:?}", ptr);
     let original: Box<String> = unsafe { Box::from_raw(ptr) };
@@ -118,6 +123,8 @@ pub struct RuntimeData {
     canary: String,
     output: String,
     calls: CallLog,
+    string_out: usize,
+    strings_in: usize,
 }
 
 impl RuntimeData {
@@ -127,6 +134,8 @@ impl RuntimeData {
             columns: Columns::new(files),
             output: String::new(),
             calls: CallLog::new(),
+            string_out: 0,
+            strings_in: 0,
         }
     }
 }
@@ -138,6 +147,8 @@ impl TestRuntime {
     pub fn output(&self) -> String {
         cast_to_runtime_data(self.runtime_data).output.clone()
     }
+    pub fn strings_in(&self) -> usize { cast_to_runtime_data(self.runtime_data).strings_in }
+    pub fn strings_out(&self) -> usize { cast_to_runtime_data(self.runtime_data).string_out }
 }
 
 impl Runtime for TestRuntime {
