@@ -55,5 +55,9 @@ fn extract_expr(expr: &TypedExpr, vars: &mut HashSet<String>) {
             vars.insert(var.clone());
             extract_expr(value, vars);
         }
+        Expr::Concatenation(left, right) => {
+            extract_expr(left, vars);
+            extract_expr(right, vars);
+        }
     }
 }

@@ -596,6 +596,58 @@ fn test_logical_or() {
     let c = btexpr!(Expr::Variable("c".to_string()));
     let a_and_b = btexpr!(Expr::LogicalOp(a, LogicalOp::Or, b));
     let expected = Stmt::Expr(texpr!(Expr::LogicalOp(a_and_b, LogicalOp::Or, c)));
-    println!("actual {}", actual.pattern_actions[0].action);
     assert_eq!(actual, sprogram!(expected))
 }
+
+// #[test]
+// fn string_concat() {
+//     actual!(actual, "{ print (a b) } ");
+//     let a = btexpr!(Expr::Variable("a".to_string()));
+//     let b = btexpr!(Expr::Variable("b".to_string()));
+//     let print = Stmt::Print(texpr!(Expr::Concatenation(a, b)));
+//     assert_eq!(actual, sprogram!(print));
+// }
+//
+// #[test]
+// fn string_concat_ooo() {
+//     actual!(actual, "{ print (a b - c) } ");
+//     let a = btexpr!(Expr::Variable("a".to_string()));
+//     let b = btexpr!(Expr::Variable("b".to_string()));
+//     let c = btexpr!(Expr::Variable("c".to_string()));
+//     let b_minus_c = btexpr!(Expr::MathOp(b, MathOp::Minus, c));
+//     let expected = Stmt::Print(texpr!(Expr::Concatenation(a, b_minus_c)));
+//     assert_eq!(actual, sprogram!(expected));
+// }
+//
+// #[test]
+// fn string_concat_ooo_2() {
+//     actual!(actual, "{ print (a - c b ) } ");
+//     let a = btexpr!(Expr::Variable("a".to_string()));
+//     let b = btexpr!(Expr::Variable("b".to_string()));
+//     let c = btexpr!(Expr::Variable("c".to_string()));
+//     let a_minus_c = btexpr!(Expr::MathOp(a, MathOp::Minus, c));
+//     let expected = Stmt::Print(texpr!(Expr::Concatenation(a_minus_c, b)));
+//     assert_eq!(actual, sprogram!(expected));
+// }
+//
+// #[test]
+// fn string_concat_ooo_3() {
+//     actual!(actual, "{ print (a < b c ) } ");
+//     let a = btexpr!(Expr::Variable("a".to_string()));
+//     let b = btexpr!(Expr::Variable("b".to_string()));
+//     let c = btexpr!(Expr::Variable("c".to_string()));
+//     let b_concat_c = btexpr!(Expr::Concatenation(b, c));
+//     let expected = Stmt::Print(texpr!(Expr::BinOp(a, BinOp::Less, b_concat_c)));
+//     assert_eq!(actual, sprogram!(expected));
+// }
+//
+// #[test]
+// fn string_concat_ooo_4() {
+//     actual!(actual, "{ print (a b < c ) } ");
+//     let a = btexpr!(Expr::Variable("a".to_string()));
+//     let b = btexpr!(Expr::Variable("b".to_string()));
+//     let c = btexpr!(Expr::Variable("c".to_string()));
+//     let a_concat_b = btexpr!(Expr::Concatenation(a, b));
+//     let expected = Stmt::Print(texpr!(Expr::BinOp(a_concat_b, BinOp::Less, c)));
+//     assert_eq!(actual, sprogram!(expected));
+// }

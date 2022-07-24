@@ -42,5 +42,6 @@ fn main() {
             lex(&program).unwrap()));
 
     analyze(&mut ast);
+
     codgen::compile_and_run(ast, &args.files, args.dump);
 }

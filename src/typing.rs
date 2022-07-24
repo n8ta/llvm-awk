@@ -93,6 +93,11 @@ impl TypeAnalysis {
             Expr::Call => {
                 expr.typ = AwkT::Float
             }
+            Expr::Concatenation(left, right) => {
+                expr.typ = AwkT::String;
+                self.analyze_expr(left);
+                self.analyze_expr(right);
+            }
         }
     }
 

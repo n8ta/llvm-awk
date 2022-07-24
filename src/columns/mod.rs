@@ -1,5 +1,3 @@
-mod string_utils;
-
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Read};
@@ -15,7 +13,7 @@ pub struct Columns {
     files: Vec<String>,
     current_path: Option<String>,
     lines: HashMap<usize, Line>,
-    line_number: usize,
+    line_number: Option<usize>,
 }
 
 impl Columns {
@@ -24,15 +22,19 @@ impl Columns {
             rs: String::from("\n"),
             fs: String::from(" "),
             files: files.into_iter().rev().collect(),
-            line_number: 0,
+            line_number: None,
             lines: HashMap::new(),
             current_path: None,
         };
-        c.next_line();
         c
     }
+
+    fn get_line_number(&self) -> usize{
+        if let Some(line) = self.line_number { line } else { 0 }
+    }
+
     pub fn get(&mut self, column: usize) -> String {
-        if let Some(line) = self.lines.get(&self.line_number) {
+        if let Some(line) = self.lines.get(&self.get_line_number()) {
             if let Some(field) = line.get(&column) {
                 return field.to_string();
             }
@@ -41,7 +43,7 @@ impl Columns {
     }
 
     pub fn set(&mut self, column: usize, data: String) {
-        if let Some(line) = self.lines.get_mut(&self.line_number) {
+        if let Some(line) = self.lines.get_mut(&self.get_line_number()) {
             line.insert(column, data);
         } else {
             let mut map = HashMap::new();
@@ -50,30 +52,30 @@ impl Columns {
         }
     }
 
-    fn string_to_vec_vec(&self, contents: String) -> HashMap<usize, Line> {
+    fn parse_input_file(fs: &str, rs: &str, contents: String) -> HashMap<usize, Line> {
         let mut lines = HashMap::new();
         for (line_idx, line) in contents
-            .split(&self.rs)
+            .split(rs)
             .enumerate() {
+
+            if line.len() == 0 { continue }
+
             let mut map = HashMap::new();
             map.insert(0, line.to_string());
-            for (field_idx, field) in line.split(&self.fs).enumerate() {
+            for (field_idx, field) in line.split(fs).enumerate() {
                 map.insert(field_idx + 1, field.to_string());
             }
             lines.insert(line_idx, map);
         }
-        println!("{:?}", lines);
         lines
     }
 
 
     fn advance_file(&mut self) -> bool {
         if let Some(next_file) = self.files.pop() {
-            println!("starting file {}", next_file);
             let contents = std::fs::read_to_string(PathBuf::from(next_file.clone())).unwrap();
-            println!("contents: {}",contents);
             self.current_path = Some(next_file);
-            self.lines = self.string_to_vec_vec(contents);
+            self.lines = Columns::parse_input_file(&self.fs, &self.rs, contents);
             true
         } else {
             false
@@ -85,12 +87,19 @@ impl Columns {
             return false;
         }
         loop {
-            if let Some(_next_line) = self.lines.get(&self.line_number) {
-                self.line_number += 1;
+            let line_number =
+                if let Some(line_num) = self.line_number {
+                    line_num
+                } else {
+                    self.line_number = Some(0);
+                    return self.lines.get(&0).is_some();
+                };
+            if let Some(_next_line) = self.lines.get(&(line_number+1)) {
+                self.line_number = Some(line_number+1);
                 return true;
             }
             if self.advance_file() {
-                self.line_number = 0;
+                self.line_number = None;
             } else {
                 return false;
             }
@@ -99,7 +108,7 @@ impl Columns {
 
     fn calc_columns(&mut self, path: &String) {
         let contents = std::fs::read_to_string(PathBuf::from(path)).unwrap();
-        self.lines = self.string_to_vec_vec(contents);
+        self.lines = Columns::parse_input_file(&self.fs, &self.rs, contents);
     }
     pub fn set_record_sep(&mut self, value: String) {
         if self.current_path.is_some() { panic!("must set fs/rs before reading lines") }
@@ -109,6 +118,32 @@ impl Columns {
         if self.current_path.is_some() { panic!("must set fs/rs before reading lines") }
         self.fs = value;
     }
+}
+
+#[test]
+fn test_parse_input_file() {
+    let actual = Columns::parse_input_file(" ", "\n", "a b c\nd e f\ng h i".to_string());
+    let mut map: HashMap<usize, Line> = HashMap::new();
+    let mut line1: Line = HashMap::new();
+    line1.insert(0, "a b c".to_string());
+    line1.insert(1, "a".to_string());
+    line1.insert(2, "b".to_string());
+    line1.insert(3, "c".to_string());
+    let mut line2: Line = HashMap::new();
+    line2.insert(0, "d e f".to_string());
+    line2.insert(1, "d".to_string());
+    line2.insert(2, "e".to_string());
+    line2.insert(3, "f".to_string());
+    let mut line3: Line = HashMap::new();
+    line3.insert(0, "g h i".to_string());
+    line3.insert(1, "g".to_string());
+    line3.insert(2, "h".to_string());
+    line3.insert(3, "i".to_string());
+
+    map.insert(0, line1);
+    map.insert(1, line2);
+    map.insert(2, line3);
+    assert_eq!(actual, map)
 }
 
 #[test]
@@ -124,8 +159,9 @@ fn test_files() {
     let mut cols = Columns::new(vec![
         file_path_1.to_str().unwrap().to_string(),
         file_path_2.to_str().unwrap().to_string()]);
+
     assert!(cols.next_line());
-    assert_eq!(cols.get(0), "a b c\n");
+    assert_eq!(cols.get(0), "a b c");
     assert_eq!(cols.get(1), "a");
     assert_eq!(cols.get(2), "b");
     assert_eq!(cols.get(3), "c");
@@ -133,5 +169,27 @@ fn test_files() {
     assert_eq!(cols.get(3), "f");
     assert_eq!(cols.get(2), "e");
     assert_eq!(cols.get(1), "d");
-    assert_eq!(cols.get(0), "d e f\n");
+    assert_eq!(cols.get(0), "d e f");
+    assert!(cols.next_line());
+    assert_eq!(cols.get(3), "i");
+    assert_eq!(cols.get(2), "h");
+    assert_eq!(cols.get(1), "g");
+    assert_eq!(cols.get(0), "g h i");
+    assert!(cols.next_line());
+    assert_eq!(cols.get(0), "1 2 3");
+    assert_eq!(cols.get(3), "3");
+    assert_eq!(cols.get(2), "2");
+    assert_eq!(cols.get(1), "1");
+    assert!(cols.next_line());
+    assert_eq!(cols.get(3), "6");
+    assert_eq!(cols.get(2), "5");
+    assert_eq!(cols.get(1), "4");
+    assert_eq!(cols.get(0), "4 5 6");
+    assert!(cols.next_line());
+    assert_eq!(cols.get(3), "9");
+    assert_eq!(cols.get(2), "8");
+    assert_eq!(cols.get(1), "7");
+    assert_eq!(cols.get(0), "7 8 9");
+    assert_eq!(cols.next_line(), false);
+    assert_eq!(cols.next_line(), false);
 }

@@ -1,4 +1,4 @@
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, Formatter, write};
 use crate::lexer::{BinOp, MathOp, LogicalOp};
 
 
@@ -21,8 +21,8 @@ pub enum Stmt {
 impl Display for Stmt {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Stmt::Expr(expr) => { write!(f, "{}", expr)? },
-            Stmt::Print(expr) => { write!(f, "print {}", expr)? },
+            Stmt::Expr(expr) => { write!(f, "{}", expr)? }
+            Stmt::Print(expr) => { write!(f, "print {}", expr)? }
             Stmt::Group(group) => {
                 for elem in group {
                     write!(f, "{}", elem)?;
@@ -81,6 +81,7 @@ pub enum Expr {
     Assign(String, Box<TypedExpr>),
     NumberF64(f64),
     String(String),
+    Concatenation(Box<TypedExpr>, Box<TypedExpr>),
     BinOp(Box<TypedExpr>, BinOp, Box<TypedExpr>),
     MathOp(Box<TypedExpr>, MathOp, Box<TypedExpr>),
     LogicalOp(Box<TypedExpr>, LogicalOp, Box<TypedExpr>),
@@ -112,6 +113,7 @@ impl Display for Expr {
             Expr::MathOp(left, op, right) => write!(f, "{}{}{}", left, op, right),
             Expr::LogicalOp(left, op, right) => write!(f, "{}{}{}", left, op, right),
             Expr::Column(col) => write!(f, "${}", col),
+            Expr::Concatenation(left, right) => write!(f, "{} {}", left, right),
         }
     }
 }
